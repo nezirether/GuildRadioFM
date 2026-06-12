@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GuildRadioFM Song Importer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080706;
+      --panel: #11100d;
+      --panel-2: #18140f;
+      --line: #8c6a28;
+      --gold: #e0b94c;
+      --gold-soft: #f1d98d;
+      --text: #f4ead0;
+      --muted: #b8aa8b;
+      --bad: #ff8f7c;
+      --good: #91e09b;
+      --blue: #9cc8ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 22px 0 28px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 14px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.1;
+      color: var(--gold-soft);
+      font-weight: 700;
+    }
+
+    .subtitle {
+      margin: 7px 0 0;
+      color: var(--muted);
+      max-width: 720px;
+    }
+
+    .status {
+      min-width: 210px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    section {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      min-height: 112px;
+    }
+
+    section.full { grid-column: 1 / -1; }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(140, 106, 40, 0.65);
+      background: #0d0b09;
+    }
+
+    h2 {
+      margin: 0;
+      color: var(--gold-soft);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .body {
+      padding: 12px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: #221b10;
+      color: var(--gold-soft);
+      min-height: 32px;
+      padding: 6px 10px;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) {
+      background: #2c2416;
+      border-color: var(--gold);
+    }
+
+    button:disabled {
+      color: #776d58;
+      cursor: not-allowed;
+      opacity: 0.65;
+    }
+
+    .primary {
+      background: #392b12;
+      color: #fff2bf;
+    }
+
+    .pill {
+      color: var(--muted);
+      border: 1px solid rgba(140, 106, 40, 0.6);
+      padding: 4px 8px;
+      white-space: nowrap;
+    }
+
+    .ok { color: var(--good); }
+    .bad { color: var(--bad); }
+    .blue { color: var(--blue); }
+    .muted { color: var(--muted); }
+
+    ol, ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    li + li { margin-top: 6px; }
+
+    code {
+      color: var(--gold-soft);
+      background: #090807;
+      border: 1px solid rgba(140, 106, 40, 0.55);
+      padding: 1px 4px;
+    }
+
+    .log {
+      height: 240px;
+      overflow: auto;
+      padding: 10px;
+      background: #070605;
+      border: 1px solid rgba(140, 106, 40, 0.55);
+      white-space: pre-wrap;
+      color: var(--muted);
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .songs {
+      height: 280px;
+      overflow: auto;
+      border: 1px solid rgba(140, 106, 40, 0.55);
+      background: #070605;
+    }
+
+    .song-row {
+      display: grid;
+      grid-template-columns: 54px 1fr;
+      gap: 8px;
+      padding: 6px 8px;
+      border-bottom: 1px solid rgba(140, 106, 40, 0.22);
+      min-height: 30px;
+      align-items: center;
+    }
+
+    .song-row:nth-child(even) { background: rgba(255, 255, 255, 0.025); }
+
+    .song-index {
+      color: var(--muted);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .drop {
+      border: 1px dashed rgba(224, 185, 76, 0.7);
+      background: #0b0907;
+      padding: 14px;
+      color: var(--muted);
+      min-height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .drop.dragging {
+      background: #1c160d;
+      color: var(--gold-soft);
+    }
+
+    @media (max-width: 800px) {
+      header {
+        display: block;
+      }
+
+      .status {
+        margin-top: 12px;
+        text-align: left;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>GuildRadioFM Song Importer</h1>
+        <p class="subtitle">A local helper for adding MP3 files to the addon folder and updating <code>SongList.lua</code>. Use Chrome or Edge.</p>
+      </div>
+      <div id="supportStatus" class="status">Checking browser support...</div>
+    </header>
+
+    <div class="grid">
+      <section>
+        <div class="section-head">
+          <h2>1. Choose Addon Folder</h2>
+          <span id="folderState" class="pill">No folder selected</span>
+        </div>
+        <div class="body">
+          <div class="actions">
+            <button id="chooseFolder" class="primary">Choose GuildRadioFM Folder</button>
+            <button id="refreshLibrary" disabled>Refresh Library</button>
+          </div>
+          <p class="muted">Pick the folder named <code>GuildRadioFM</code>, not <code>Songs</code>. The tool needs permission to read and write this folder.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>2. Add MP3s</h2>
+          <span id="importState" class="pill">Waiting</span>
+        </div>
+        <div class="body">
+          <div class="actions">
+            <button id="pickSongs" class="primary" disabled>Pick MP3 Files</button>
+          </div>
+          <div id="dropZone" class="drop" aria-label="Drop MP3 files here">Drop MP3 files here, or use Pick MP3 Files.</div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>How It Works</h2>
+        </div>
+        <div class="body">
+          <ol>
+            <li>Copies selected MP3s into <code>GuildRadioFM/Songs</code>.</li>
+            <li>Adds missing entries to <code>SongList.lua</code>.</li>
+            <li>Skips songs that already exist by title or file path.</li>
+            <li>After importing, restart WoW or type <code>/reload</code>.</li>
+          </ol>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Current Library</h2>
+          <span id="songCount" class="pill">0 songs</span>
+        </div>
+        <div class="body">
+          <div id="songList" class="songs"></div>
+        </div>
+      </section>
+
+      <section class="full">
+        <div class="section-head">
+          <h2>Activity</h2>
+          <span id="lastResult" class="pill">No changes yet</span>
+        </div>
+        <div class="body">
+          <div id="log" class="log"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const state = {
+      root: null,
+      songsDir: null,
+      songListHandle: null,
+      entries: [],
+      rawSongList: ""
+    };
+
+    const ui = {
+      supportStatus: document.getElementById("supportStatus"),
+      folderState: document.getElementById("folderState"),
+      importState: document.getElementById("importState"),
+      songCount: document.getElementById("songCount"),
+      songList: document.getElementById("songList"),
+      log: document.getElementById("log"),
+      lastResult: document.getElementById("lastResult"),
+      chooseFolder: document.getElementById("chooseFolder"),
+      refreshLibrary: document.getElementById("refreshLibrary"),
+      pickSongs: document.getElementById("pickSongs"),
+      dropZone: document.getElementById("dropZone")
+    };
+
+    function log(message, type = "") {
+      const prefix = type ? `[${type}] ` : "";
+      ui.log.textContent += `${prefix}${message}\n`;
+      ui.log.scrollTop = ui.log.scrollHeight;
+    }
+
+    function setResult(text, className = "") {
+      ui.lastResult.textContent = text;
+      ui.lastResult.className = `pill ${className}`.trim();
+    }
+
+    function supportsFileSystemAccess() {
+      return Boolean(window.showDirectoryPicker && window.showOpenFilePicker);
+    }
+
+    function escapeLuaString(value) {
+      return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    }
+
+    function titleFromFileName(name) {
+      return name.replace(/\.[^.]+$/u, "").trim();
+    }
+
+    function songIdFromTitle(title) {
+      const slug = String(title || "song")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      return `guildradiofm:${slug || "song"}`;
+    }
+
+    function formatDuration(duration) {
+      const value = Number(duration);
+      if (!Number.isFinite(value) || value <= 0) return null;
+      return Number(value.toFixed(2));
+    }
+
+    async function detectAudioDuration(file) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) {
+        return { duration: null, warning: "This browser does not support audio duration detection." };
+      }
+
+      let audioContext;
+      try {
+        audioContext = new AudioContextClass();
+        const data = await file.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(data.slice(0));
+        return { duration: formatDuration(audioBuffer.duration), warning: "" };
+      } catch (error) {
+        return {
+          duration: null,
+          warning: "Duration could not be detected. This song will play, but auto-next and seek may not work until duration is added manually."
+        };
+      } finally {
+        if (audioContext && audioContext.close) {
+          audioContext.close().catch(() => {});
+        }
+      }
+    }
+
+    function normalizePath(value) {
+      return value.replace(/\\\\/g, "\\").toLowerCase();
+    }
+
+    function parseSongEntries(text) {
+      const entries = [];
+      const pattern = /\{([^}]+)\}/g;
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        const rawEntry = match[1];
+        const title = /title\s*=\s*"((?:\\"|[^"])*)"/.exec(rawEntry);
+        const file = /file\s*=\s*"((?:\\"|[^"])*)"/.exec(rawEntry);
+        const id = /id\s*=\s*"((?:\\"|[^"])*)"/.exec(rawEntry);
+        if (title && file) {
+          entries.push({
+            id: id ? id[1].replace(/\\"/g, '"') : "",
+            title: title[1].replace(/\\"/g, '"'),
+            file: file[1].replace(/\\"/g, '"')
+          });
+        }
+      }
+      return entries;
+    }
+
+    async function readTextFile(handle) {
+      const file = await handle.getFile();
+      return await file.text();
+    }
+
+    async function writeTextFile(handle, text) {
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+    }
+
+    async function ensureReadWritePermission(handle) {
+      const options = { mode: "readwrite" };
+      if ((await handle.queryPermission(options)) === "granted") return true;
+      return (await handle.requestPermission(options)) === "granted";
+    }
+
+    async function loadAddonFolder(folderHandle) {
+      if (folderHandle.name !== "GuildRadioFM") {
+        log(`Selected folder is "${folderHandle.name}". This tool expects the folder named GuildRadioFM.`, "WARN");
+      }
+
+      const allowed = await ensureReadWritePermission(folderHandle);
+      if (!allowed) throw new Error("Folder permission was not granted.");
+
+      const songsDir = await folderHandle.getDirectoryHandle("Songs", { create: true });
+      const songListHandle = await folderHandle.getFileHandle("SongList.lua", { create: false });
+      const rawSongList = await readTextFile(songListHandle);
+      const entries = parseSongEntries(rawSongList);
+
+      if (!rawSongList.includes("GuildRadioFMSongList")) {
+        throw new Error("SongList.lua does not look like a GuildRadioFM song list.");
+      }
+
+      state.root = folderHandle;
+      state.songsDir = songsDir;
+      state.songListHandle = songListHandle;
+      state.rawSongList = rawSongList;
+      state.entries = entries;
+
+      ui.folderState.textContent = folderHandle.name;
+      ui.folderState.className = "pill ok";
+      ui.pickSongs.disabled = false;
+      ui.refreshLibrary.disabled = false;
+      renderLibrary();
+      log(`Loaded ${entries.length} songs from SongList.lua.`, "OK");
+    }
+
+    function renderLibrary() {
+      ui.songCount.textContent = `${state.entries.length} songs`;
+      ui.songList.textContent = "";
+      if (!state.entries.length) {
+        const empty = document.createElement("div");
+        empty.className = "song-row";
+        empty.innerHTML = '<span class="song-index">-</span><span class="muted">No songs listed.</span>';
+        ui.songList.append(empty);
+        return;
+      }
+
+      state.entries.forEach((entry, index) => {
+        const row = document.createElement("div");
+        row.className = "song-row";
+        const number = document.createElement("span");
+        number.className = "song-index";
+        number.textContent = String(index + 1);
+        const title = document.createElement("span");
+        title.textContent = entry.title;
+        row.append(number, title);
+        ui.songList.append(row);
+      });
+    }
+
+    function hasEntryFor(fileName, title) {
+      const targetPath = normalizePath(`Interface\\AddOns\\GuildRadioFM\\Songs\\${fileName}`);
+      const targetTitle = title.toLowerCase();
+      return state.entries.some(entry =>
+        normalizePath(entry.file) === targetPath ||
+        String(entry.title || "").toLowerCase() === targetTitle
+      );
+    }
+
+    async function copySongFile(file) {
+      const destination = await state.songsDir.getFileHandle(file.name, { create: true });
+      const writable = await destination.createWritable();
+      await writable.write(file);
+      await writable.close();
+    }
+
+    function buildSongEntryLua(entry) {
+      const base = `    { id = "${escapeLuaString(songIdFromTitle(entry.title))}", title = "${escapeLuaString(entry.title)}", file = "Interface\\\\AddOns\\\\GuildRadioFM\\\\Songs\\\\${escapeLuaString(entry.fileName)}"`;
+      if (entry.duration) {
+        return `${base}, duration = ${entry.duration} },`;
+      }
+      return `${base}, -- duration = 0, -- Add duration in seconds for auto-next, progress, and seek.\n    },`;
+    }
+
+    function appendEntriesToSongList(rawText, entries) {
+      const insertText = entries.map(buildSongEntryLua).join("\n");
+
+      const closingIndex = rawText.lastIndexOf("}");
+      if (closingIndex === -1) {
+        throw new Error("Could not find the closing brace in SongList.lua.");
+      }
+
+      return `${rawText.slice(0, closingIndex)}${insertText}\n${rawText.slice(closingIndex)}`;
+    }
+
+    async function importFiles(files) {
+      if (!state.root || !state.songsDir || !state.songListHandle) {
+        log("Choose the GuildRadioFM folder first.", "WARN");
+        return;
+      }
+
+      const mp3s = Array.from(files).filter(file => file.name.toLowerCase().endsWith(".mp3"));
+      if (!mp3s.length) {
+        log("No MP3 files selected.", "WARN");
+        return;
+      }
+
+      ui.importState.textContent = "Importing...";
+      ui.importState.className = "pill blue";
+      setResult("Working", "blue");
+
+      const freshText = await readTextFile(state.songListHandle);
+      state.rawSongList = freshText;
+      state.entries = parseSongEntries(freshText);
+
+      const newEntries = [];
+      let copied = 0;
+      let skipped = 0;
+
+      for (const file of mp3s) {
+        const title = titleFromFileName(file.name);
+        if (hasEntryFor(file.name, title)) {
+          skipped += 1;
+          log(`Skipped duplicate: ${file.name}`, "SKIP");
+          continue;
+        }
+
+        const durationResult = await detectAudioDuration(file);
+        if (durationResult.duration) {
+          log(`Detected duration for ${file.name}: ${durationResult.duration} seconds`, "OK");
+        } else {
+          log(`${file.name}: ${durationResult.warning}`, "WARN");
+        }
+
+        await copySongFile(file);
+        copied += 1;
+        newEntries.push({ title, fileName: file.name, duration: durationResult.duration });
+        log(`Copied: ${file.name}`, "OK");
+      }
+
+      if (newEntries.length) {
+        const updated = appendEntriesToSongList(state.rawSongList, newEntries);
+        await writeTextFile(state.songListHandle, updated);
+        state.rawSongList = updated;
+        state.entries = parseSongEntries(updated);
+        log(`Updated SongList.lua with ${newEntries.length} new song entry${newEntries.length === 1 ? "" : "ies"}.`, "OK");
+      }
+
+      renderLibrary();
+      ui.importState.textContent = "Ready";
+      ui.importState.className = "pill ok";
+      setResult(`${copied} added, ${skipped} skipped`, copied ? "ok" : "muted");
+      log("Done. Restart WoW or type /reload before testing the new songs.", "NEXT");
+    }
+
+    ui.chooseFolder.addEventListener("click", async () => {
+      try {
+        const folder = await window.showDirectoryPicker({ mode: "readwrite" });
+        await loadAddonFolder(folder);
+      } catch (error) {
+        log(error.message || String(error), "ERROR");
+        setResult("Folder not loaded", "bad");
+      }
+    });
+
+    ui.refreshLibrary.addEventListener("click", async () => {
+      try {
+        await loadAddonFolder(state.root);
+      } catch (error) {
+        log(error.message || String(error), "ERROR");
+      }
+    });
+
+    ui.pickSongs.addEventListener("click", async () => {
+      try {
+        const handles = await window.showOpenFilePicker({
+          multiple: true,
+          types: [{ description: "MP3 audio", accept: { "audio/mpeg": [".mp3"] } }]
+        });
+        const files = [];
+        for (const handle of handles) files.push(await handle.getFile());
+        await importFiles(files);
+      } catch (error) {
+        if (error && error.name === "AbortError") return;
+        log(error.message || String(error), "ERROR");
+        setResult("Import failed", "bad");
+      }
+    });
+
+    ui.dropZone.addEventListener("dragover", event => {
+      event.preventDefault();
+      ui.dropZone.classList.add("dragging");
+    });
+
+    ui.dropZone.addEventListener("dragleave", () => {
+      ui.dropZone.classList.remove("dragging");
+    });
+
+    ui.dropZone.addEventListener("drop", async event => {
+      event.preventDefault();
+      ui.dropZone.classList.remove("dragging");
+      try {
+        await importFiles(event.dataTransfer.files);
+      } catch (error) {
+        log(error.message || String(error), "ERROR");
+        setResult("Import failed", "bad");
+      }
+    });
+
+    if (supportsFileSystemAccess()) {
+      ui.supportStatus.textContent = "Chrome/Edge file access ready";
+      ui.supportStatus.className = "status ok";
+      log("Ready. Choose the GuildRadioFM addon folder to begin.", "OK");
+    } else {
+      ui.supportStatus.textContent = "Use Chrome or Edge";
+      ui.supportStatus.className = "status bad";
+      ui.chooseFolder.disabled = true;
+      ui.pickSongs.disabled = true;
+      log("This browser does not support folder write access. Open this file in Chrome or Edge.", "ERROR");
+    }
+
+    renderLibrary();
+  </script>
+</body>
+</html>
