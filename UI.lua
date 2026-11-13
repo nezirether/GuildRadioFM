@@ -115,10 +115,20 @@ local function IconButton(parent, name, size, onClick, tip, box)
     function b:SetActive(on) self.active = on and true or false; self:Paint(false) end
     function b:SetDisabledLook(off) self.disabled = off; self:Paint(false) end
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    b:SetScript("OnClick", function(selfB, mouse) if not selfB.disabled then onClick(selfB, mouse) end end)
+    b:SetScript("OnClick", function(selfB, mouse)
+        if selfB.justDragged then selfB.justDragged = false; return end
+        if not selfB.disabled then onClick(selfB, mouse) end
+    end)
     Tip(b, tip)
     b:Paint(false)
     return b
+end
+
+-- let a drag that starts on a button move the whole window instead of clicking the button
+local function DragThrough(btn, frame, store)
+    btn:RegisterForDrag("LeftButton")
+    btn:SetScript("OnDragStart", function(selfB) selfB.justDragged = true; frame:StartMoving() end)
+    btn:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); R:SaveWindow(frame, store()) end)
 end
 
 -- text button: "primary" = violet fill, "ghost" = quiet surface
@@ -1487,6 +1497,7 @@ function R:CreateMiniWindow()
     m.next = IconButton(m, "next", 12, function() R:Next() end, "Next", 24)
     m.close = IconButton(m, "close", 10, function() R:ShowMini(false) end, nil, 20)
     m.close:SetPoint("TOPRIGHT", -2, -2)
+    m.close:SetAlpha(0)
     m.open = IconButton(m, "up", 10, function() R:ShowTab(R.db.tab or "now") end, "Open the full player", 20)
     m.open:SetPoint("TOPRIGHT", m.close, "TOPLEFT", 0, 0)
     m.next:SetPoint("RIGHT", -44, -1)
@@ -1501,6 +1512,18 @@ function R:CreateMiniWindow()
     m.barFill:SetPoint("BOTTOMLEFT", 0, 0)
     m.barFill:SetHeight(2)
     m:SetScript("OnMouseUp", function(_, b) if b == "RightButton" then R:ToggleMainWindow() end end)
+    -- grab it anywhere, buttons included; the close button only shows while the mouse is over the player
+    for _, b in ipairs({ m.play, m.next, m.close, m.open }) do DragThrough(b, m, function() return R.db.miniWindow end) end
+    local hoverAcc = 0
+    m.hoverWatch = CreateFrame("Frame", nil, m)
+    m.hoverWatch:SetScript("OnUpdate", function(_, el)
+        hoverAcc = hoverAcc + el
+        if hoverAcc < 0.05 then return end
+        hoverAcc = 0
+        local over = m:IsMouseOver()
+        m.close:SetAlpha(over and 1 or 0)
+        m.open:SetAlpha(over and 1 or 0.5)
+    end)
     local acc = 0
     m:SetScript("OnUpdate", function(_, el) acc = acc + el; if acc > 0.1 then acc = 0; R:UpdateProgress() end end)
     m.grip = self:AddScaleGrip(m, "miniScale")
