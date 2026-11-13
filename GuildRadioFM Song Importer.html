@@ -355,64 +355,16 @@
       return name.replace(/\.[^.]+$/u, "").trim();
     }
 
-    function songIdFromTitle(title) {
-      const slug = String(title || "song")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "");
-      return `guildradiofm:${slug || "song"}`;
-    }
-
-    function formatDuration(duration) {
-      const value = Number(duration);
-      if (!Number.isFinite(value) || value <= 0) return null;
-      return Number(value.toFixed(2));
-    }
-
-    async function detectAudioDuration(file) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) {
-        return { duration: null, warning: "This browser does not support audio duration detection." };
-      }
-
-      let audioContext;
-      try {
-        audioContext = new AudioContextClass();
-        const data = await file.arrayBuffer();
-        const audioBuffer = await audioContext.decodeAudioData(data.slice(0));
-        return { duration: formatDuration(audioBuffer.duration), warning: "" };
-      } catch (error) {
-        return {
-          duration: null,
-          warning: "Duration could not be detected. This song will play, but auto-next and seek may not work until duration is added manually."
-        };
-      } finally {
-        if (audioContext && audioContext.close) {
-          audioContext.close().catch(() => {});
-        }
-      }
-    }
-
     function normalizePath(value) {
       return value.replace(/\\\\/g, "\\").toLowerCase();
     }
 
     function parseSongEntries(text) {
       const entries = [];
-      const pattern = /\{([^}]+)\}/g;
+      const pattern = /\{\s*title\s*=\s*"([^"]+)"\s*,\s*file\s*=\s*"([^"]+)"[^}]*\}/g;
       let match;
       while ((match = pattern.exec(text)) !== null) {
-        const rawEntry = match[1];
-        const title = /title\s*=\s*"((?:\\"|[^"])*)"/.exec(rawEntry);
-        const file = /file\s*=\s*"((?:\\"|[^"])*)"/.exec(rawEntry);
-        const id = /id\s*=\s*"((?:\\"|[^"])*)"/.exec(rawEntry);
-        if (title && file) {
-          entries.push({
-            id: id ? id[1].replace(/\\"/g, '"') : "",
-            title: title[1].replace(/\\"/g, '"'),
-            file: file[1].replace(/\\"/g, '"')
-          });
-        }
+        entries.push({ title: match[1], file: match[2] });
       }
       return entries;
     }
@@ -505,16 +457,10 @@
       await writable.close();
     }
 
-    function buildSongEntryLua(entry) {
-      const base = `    { id = "${escapeLuaString(songIdFromTitle(entry.title))}", title = "${escapeLuaString(entry.title)}", file = "Interface\\\\AddOns\\\\GuildRadioFM\\\\Songs\\\\${escapeLuaString(entry.fileName)}"`;
-      if (entry.duration) {
-        return `${base}, duration = ${entry.duration} },`;
-      }
-      return `${base}, -- duration = 0, -- Add duration in seconds for auto-next, progress, and seek.\n    },`;
-    }
-
     function appendEntriesToSongList(rawText, entries) {
-      const insertText = entries.map(buildSongEntryLua).join("\n");
+      const insertText = entries.map(entry =>
+        `    { title = "${escapeLuaString(entry.title)}", file = "Interface\\\\AddOns\\\\GuildRadioFM\\\\Songs\\\\${escapeLuaString(entry.fileName)}" },`
+      ).join("\n");
 
       const closingIndex = rawText.lastIndexOf("}");
       if (closingIndex === -1) {
@@ -556,16 +502,9 @@
           continue;
         }
 
-        const durationResult = await detectAudioDuration(file);
-        if (durationResult.duration) {
-          log(`Detected duration for ${file.name}: ${durationResult.duration} seconds`, "OK");
-        } else {
-          log(`${file.name}: ${durationResult.warning}`, "WARN");
-        }
-
         await copySongFile(file);
         copied += 1;
-        newEntries.push({ title, fileName: file.name, duration: durationResult.duration });
+        newEntries.push({ title, fileName: file.name });
         log(`Copied: ${file.name}`, "OK");
       }
 

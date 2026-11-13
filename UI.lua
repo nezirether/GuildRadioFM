@@ -1,1546 +1,1846 @@
-local GOLD = { 0.86, 0.66, 0.24, 1 }
-local DARK = { 0.035, 0.03, 0.025, 0.96 }
-local DARKER = { 0.015, 0.012, 0.01, 0.98 }
-local HILITE = { 0.22, 0.16, 0.06, 0.9 }
-local LYRIC_CURRENT = { 1, 0.92, 0.68, 1 }
-local LYRIC_CONTEXT = { 0.72, 0.64, 0.48, 1 }
-local LYRIC_MUTED = { 0.48, 0.43, 0.34, 1 }
-local ICON_TEXTURE = "Interface\\AddOns\\GuildRadioFM\\Media\\GuildRadioFM_Icon.tga"
+-- GuildRadioFM 2.3 interface: one window with tabs (Now Playing, Library, Playlists, Live, Settings),
+-- a mini player, a now-playing toast, and the live invite card. Dark glass over the game's own
+-- loading-screen art, WoW gold accent, Morpheus title,
+-- custom art in Media/ (made by tools/make_art.py). No stock Blizzard button templates.
+local R = GuildRadioFM
+local MEDIA = "Interface\\AddOns\\GuildRadioFM\\Media\\"
+local WHITE = "Interface\\Buttons\\WHITE8X8"
+local EMBLEM = MEDIA .. "GuildRadioFM_Emblem.tga"
+local LOGO_FONT = "Fonts\\MORPHEUS.TTF"
+-- the game's own loading-screen art, darkened, behind the window
+local BACKDROPS = {
+    { key = "kalimdor", label = "Kalimdor", path = "Interface\\Glues\\LoadingScreens\\LoadScreenKalimdor" },
+    { key = "eastern", label = "Eastern Kingdoms", path = "Interface\\Glues\\LoadingScreens\\LoadScreenEasternKingdom" },
+    { key = "none", label = "Plain" },
+}
+local ICON = MEDIA .. "GuildRadioFM_Icon.tga"
+local ATLAS = MEDIA .. "GuildRadioFM_Icons.tga"
+local TITLE_FONT = "Fonts\\FRIZQT__.TTF"
+local BODY_FONT = "Fonts\\ARIALN.TTF"
 
--- Dark panels and gold trim for the local player UI.
-local function ApplyPanel(frame)
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(DARK[1], DARK[2], DARK[3], DARK[4])
-    frame:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], GOLD[4])
+local C = {
+    bg = { 0.035, 0.031, 0.027, 0.97 },
+    shade = { 0.02, 0.018, 0.015, 0.8 },
+    surface = { 0.06, 0.054, 0.047, 0.78 },
+    raised = { 0.13, 0.115, 0.095, 0.95 },
+    line = { 1, 1, 1, 0.07 },
+    text = { 0.96, 0.94, 0.9, 1 },
+    dim = { 0.66, 0.62, 0.55, 1 },
+    faint = { 0.45, 0.42, 0.37, 1 },
+    acc = { 1, 0.78, 0.3, 1 },
+    acc2 = { 0.45, 0.9, 0.55, 1 },
+    live = { 1, 0.3, 0.38, 1 },
+}
+local ICONS = { prev = 0, play = 1, stop = 2, next = 3, heart = 4, heartline = 5, shuffle = 6, ["repeat"] = 7,
+    volume = 8, mute = 9, plus = 10, close = 11, up = 12, down = 13, minus = 14, live = 15 }
+
+-- ---------- primitives ----------
+local function Tex(parent, layer, c, a)
+    local t = parent:CreateTexture(nil, layer or "BACKGROUND")
+    t:SetTexture(WHITE)
+    t:SetVertexColor(c[1], c[2], c[3], a or c[4] or 1)
+    return t
 end
 
-local function ApplyInset(frame)
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(DARKER[1], DARKER[2], DARKER[3], DARKER[4])
-    frame:SetBackdropBorderColor(0.32, 0.24, 0.1, 1)
+local function Fill(frame, c, a)
+    local t = Tex(frame, "BACKGROUND", c, a)
+    t:SetAllPoints()
+    return t
 end
 
-local function MakeText(parent, font, justify)
-    local text = parent:CreateFontString(nil, "OVERLAY")
-    text:SetFontObject(font or "GameFontNormal")
-    text:SetJustifyH(justify or "LEFT")
-    text:SetTextColor(1, 0.88, 0.58)
-    return text
+local function Outline(frame, c, a)
+    c = c or C.line
+    local edges = {}
+    for i, e in ipairs({ { "TOPLEFT", "TOPRIGHT", nil, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", nil, 1 }, { "TOPLEFT", "BOTTOMLEFT", 1, nil }, { "TOPRIGHT", "BOTTOMRIGHT", 1, nil } }) do
+        local t = Tex(frame, "BORDER", c, a)
+        t:SetPoint(e[1]); t:SetPoint(e[2])
+        if e[3] then t:SetWidth(e[3]) end
+        if e[4] then t:SetHeight(e[4]) end
+        edges[i] = t
+    end
+    return edges
 end
 
-local function AddTooltip(frame, title, text)
-    if not frame then return end
-    if frame.SetMotionScriptsWhileDisabled then frame:SetMotionScriptsWhileDisabled(true) end
-    frame:SetScript("OnEnter", function(selfFrame)
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(selfFrame, "ANCHOR_RIGHT")
-        GameTooltip:SetText(title, 1, 0.82, 0.25)
-        if text and text ~= "" then
-            GameTooltip:AddLine(text, 1, 1, 1, true)
+local function Text(parent, size, c, font, justify)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    fs:SetFont(font or BODY_FONT, size or 13, "")
+    c = c or C.text
+    fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+    fs:SetJustifyH(justify or "LEFT")
+    fs:SetWordWrap(false)
+    return fs
+end
+
+local function SetColor(fs, c) fs:SetTextColor(c[1], c[2], c[3], c[4] or 1) end
+
+local function Icon(parent, name, size, layer)
+    local t = parent:CreateTexture(nil, layer or "ARTWORK")
+    t:SetTexture(ATLAS)
+    t:SetSize(size, size)
+    local i = ICONS[name] or 0
+    t:SetTexCoord(i / 16, (i + 1) / 16, 0, 1)
+    t.SetIcon = function(selfT, n) local k = ICONS[n] or 0; selfT:SetTexCoord(k / 16, (k + 1) / 16, 0, 1) end
+    return t
+end
+
+local function Tip(frame, text)
+    frame:SetScript("OnEnter", function(selfF)
+        if selfF.Hover then selfF:Hover(true) end
+        local tip = type(text) == "function" and text(selfF) or text
+        if tip and GameTooltip then
+            GameTooltip:SetOwner(selfF, "ANCHOR_TOP")
+            GameTooltip:SetText(tip, 1, 1, 1)
+            GameTooltip:Show()
         end
-        GameTooltip:Show()
     end)
-    frame:SetScript("OnLeave", function()
+    frame:SetScript("OnLeave", function(selfF)
+        if selfF.Hover then selfF:Hover(false) end
         if GameTooltip then GameTooltip:Hide() end
     end)
 end
 
-local RaiseWindow
-
-local function RefreshWindowForKey(key)
-    if key == "mainFrame" and GuildRadioFM.UpdateMainWindow then
-        GuildRadioFM:UpdateMainWindow()
-    elseif key == "miniFrame" and GuildRadioFM.UpdateMiniWindow then
-        GuildRadioFM:UpdateMiniWindow()
-    elseif key == "libraryFrame" and GuildRadioFM.UpdateLibraryWindow then
-        GuildRadioFM:UpdateLibraryWindow()
-    elseif key == "playlistFrame" and GuildRadioFM.UpdatePlaylistWindow then
-        GuildRadioFM:UpdatePlaylistWindow()
-    elseif key == "queueFrame" and GuildRadioFM.UpdateQueueWindow then
-        GuildRadioFM:UpdateQueueWindow()
-    elseif key == "sharingFrame" and GuildRadioFM.UpdateSharingWindow then
-        GuildRadioFM:UpdateSharingWindow()
-    elseif key == "settingsFrame" and GuildRadioFM.UpdateSettingsWindow then
-        GuildRadioFM:UpdateSettingsWindow()
-    elseif key == "hiddenFrequencyFrame" and GuildRadioFM.UpdateHiddenFrequencyWindow then
-        GuildRadioFM:UpdateHiddenFrequencyWindow()
+-- icon-only button; :SetActive(true) tints it violet
+local function IconButton(parent, name, size, onClick, tip, box)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(box or size + 10, box or size + 10)
+    b.icon = Icon(b, name, size)
+    b.icon:SetPoint("CENTER")
+    b.active = false
+    function b:Paint(h)
+        local c = self.active and C.acc or (h and C.text or C.dim)
+        if self.disabled then c = C.faint end
+        self.icon:SetVertexColor(c[1], c[2], c[3], 1)
     end
-end
-
-local function GetOwningWindow(frame)
-    local current = frame
-    local owner = frame
-    while current and current ~= UIParent do
-        owner = current
-        current = current:GetParent()
-    end
-    return owner
-end
-
-local function MakeButton(parent, label, width, height, onClick)
-    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    button:SetSize(width or 70, height or 24)
-    button:SetText(label)
-    button:SetScript("OnClick", function(selfButton, ...)
-        RaiseWindow(GetOwningWindow(selfButton))
-        onClick(selfButton, ...)
+    function b:Hover(h) self:Paint(h) end
+    function b:SetActive(on) self.active = on and true or false; self:Paint(false) end
+    function b:SetDisabledLook(off) self.disabled = off; self:Paint(false) end
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b:SetScript("OnClick", function(selfB, mouse)
+        if selfB.justDragged then selfB.justDragged = false; return end
+        if not selfB.disabled then onClick(selfB, mouse) end
     end)
-    return button
+    Tip(b, tip)
+    b:Paint(false)
+    return b
 end
 
-local function MakeToggleButton(parent, label, onClick)
-    local button = MakeButton(parent, label, 92, 24, onClick)
-    button.stateText = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    button.stateText:SetPoint("CENTER")
-    return button
+-- let a drag that starts on a button move the whole window instead of clicking the button
+local function DragThrough(btn, frame, store)
+    btn:RegisterForDrag("LeftButton")
+    btn:SetScript("OnDragStart", function(selfB) selfB.justDragged = true; frame:StartMoving() end)
+    btn:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); R:SaveWindow(frame, store()) end)
 end
 
-local function MakeCheckButton(parent, label, onClick)
-    local button = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-    button.text = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    button.text:SetPoint("LEFT", button, "RIGHT", 2, 0)
-    button.text:SetText(label)
-    button:SetScript("OnClick", onClick)
-    return button
+-- text button: "primary" = violet fill, "ghost" = quiet surface
+local function TextButton(parent, label, width, height, onClick, style)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(width, height or 26)
+    b.style = style or "ghost"
+    b.bg = Fill(b, C.raised)
+    b.edge = Outline(b, C.line)
+    b.label = Text(b, 12, C.text, BODY_FONT, "CENTER")
+    b.label:SetPoint("CENTER")
+    b.label:SetText(label)
+    function b:Paint(h)
+        local c, tc
+        if self.style == "primary" then c, tc = C.acc, { 0.05, 0.04, 0.09, 1 }
+        elseif self.style == "danger" then c, tc = C.live, { 0.08, 0.02, 0.03, 1 }
+        else c, tc = C.raised, C.text end
+        local lift = h and 0.08 or 0
+        self.bg:SetVertexColor(math.min(1, c[1] + lift), math.min(1, c[2] + lift), math.min(1, c[3] + lift), self.disabled and 0.4 or 1)
+        SetColor(self.label, self.disabled and C.faint or tc)
+        for _, e in ipairs(self.edge) do e:SetAlpha(self.style == "ghost" and 1 or 0) end
+    end
+    function b:Hover(h) self:Paint(h) end
+    function b:SetLabel(t) self.label:SetText(t) end
+    function b:SetStyle(s) self.style = s; self:Paint(false) end
+    function b:SetDisabledLook(off) self.disabled = off; self:Paint(false) end
+    b:SetScript("OnClick", function(selfB, ...) if not selfB.disabled then onClick(selfB, ...) end end)
+    Tip(b, nil)
+    b:Paint(false)
+    return b
 end
 
-local function GetVisibleRowCount(container, rowHeight, maxRows)
-    local height = container and container:GetHeight() or 0
-    local count = math.floor(math.max(0, height - 8) / rowHeight)
-    if count < 1 then count = 1 end
-    if count > maxRows then count = maxRows end
-    return count
+-- small pill toggle (filters, open/closed)
+local function Pill(parent, label, onClick)
+    local b = TextButton(parent, label, 10, 22, onClick, "ghost")
+    b.label:SetFont(BODY_FONT, 11, "")
+    b:SetWidth(b.label:GetStringWidth() + 22)
+    function b:SetOn(on)
+        self.on = on
+        self.bg:SetVertexColor(on and C.acc[1] * 0.35 or C.raised[1], on and C.acc[2] * 0.35 or C.raised[2], on and C.acc[3] * 0.4 or C.raised[3], 1)
+        SetColor(self.label, on and C.text or C.dim)
+    end
+    local paint = b.Paint
+    function b:Paint(h) paint(self, h); if self.on ~= nil then self:SetOn(self.on) end end
+    return b
 end
 
-local function ClampScrollOffset(offset, totalRows, visibleRows)
-    local maxOffset = math.max(0, (totalRows or 0) - (visibleRows or 0))
-    offset = tonumber(offset) or 0
-    if offset < 0 then offset = 0 end
-    if offset > maxOffset then offset = maxOffset end
-    return offset
+local function Switch(parent, onClick)
+    local s = CreateFrame("Button", nil, parent)
+    s:SetSize(34, 18)
+    s.track = Fill(s, C.raised)
+    Outline(s, C.line)
+    s.knob = Tex(s, "ARTWORK", C.dim)
+    s.knob:SetSize(12, 12)
+    function s:SetOn(on)
+        self.on = on
+        self.knob:ClearAllPoints()
+        self.knob:SetPoint(on and "RIGHT" or "LEFT", on and -3 or 3, 0)
+        local k = on and C.text or C.dim
+        self.knob:SetVertexColor(k[1], k[2], k[3], 1)
+        local t = on and C.acc or C.raised
+        self.track:SetVertexColor(t[1], t[2], t[3], 1)
+    end
+    s:SetScript("OnClick", function(selfS) onClick(not selfS.on) end)
+    s:SetOn(false)
+    return s
 end
 
-local function AddMouseWheelScroll(frame, getState, updateFunc)
+local function Search(parent, width, placeholder, onChange)
+    local box = CreateFrame("EditBox", nil, parent)
+    box:SetSize(width, 26)
+    box:SetAutoFocus(false)
+    box:SetFont(BODY_FONT, 13, "")
+    box:SetTextColor(C.text[1], C.text[2], C.text[3])
+    box:SetTextInsets(10, 10, 0, 0)
+    Fill(box, C.surface)
+    box.edge = Outline(box, C.line)
+    box.hint = Text(box, 13, C.faint)
+    box.hint:SetPoint("LEFT", 10, 0)
+    box.hint:SetText(placeholder)
+    box:SetScript("OnEscapePressed", function(selfB) selfB:ClearFocus() end)
+    box:SetScript("OnEnterPressed", function(selfB) selfB:ClearFocus() end)
+    box:SetScript("OnEditFocusGained", function(selfB) for _, e in ipairs(selfB.edge) do e:SetVertexColor(C.acc[1], C.acc[2], C.acc[3], 0.7) end end)
+    box:SetScript("OnEditFocusLost", function(selfB) for _, e in ipairs(selfB.edge) do e:SetVertexColor(1, 1, 1, 0.07) end end)
+    box:SetScript("OnTextChanged", function(selfB)
+        local t = selfB:GetText() or ""
+        if t == "" then selfB.hint:Show() else selfB.hint:Hide() end
+        if onChange then onChange(t) end
+    end)
+    return box
+end
+
+-- thin horizontal slider (0-100)
+local function Slider(parent, width, onChange)
+    local s = CreateFrame("Frame", nil, parent)
+    s:SetSize(width, 16)
+    s:EnableMouse(true)
+    s.track = Tex(s, "BACKGROUND", C.raised)
+    s.track:SetPoint("LEFT"); s.track:SetPoint("RIGHT"); s.track:SetHeight(4)
+    s.fill = Tex(s, "ARTWORK", C.acc)
+    s.fill:SetPoint("LEFT", s.track, "LEFT"); s.fill:SetHeight(4)
+    s.knob = Tex(s, "OVERLAY", C.text)
+    s.knob:SetSize(10, 10)
+    function s:SetValue(v)
+        v = math.max(0, math.min(100, v or 0))
+        self.value = v
+        local w = self:GetWidth() * v / 100
+        self.fill:SetWidth(math.max(0.01, w))
+        self.knob:ClearAllPoints()
+        self.knob:SetPoint("CENTER", self.track, "LEFT", w, 0)
+    end
+    local function track()
+        local x = GetCursorPosition() / s:GetEffectiveScale()
+        local v = math.floor((x - s:GetLeft()) / s:GetWidth() * 100 + 0.5)
+        v = math.max(0, math.min(100, v))
+        if v ~= s.value then s:SetValue(v); onChange(v) end
+    end
+    s:SetScript("OnMouseDown", function(selfS) selfS.dragging = true; track() end)
+    s:SetScript("OnMouseUp", function(selfS) selfS.dragging = false end)
+    s:SetScript("OnUpdate", function(selfS) if selfS.dragging then track() end end)
+    s:SetValue(50)
+    return s
+end
+
+local function Wheel(frame, fn)
     frame:EnableMouseWheel(true)
-    frame:SetScript("OnMouseWheel", function(_, delta)
-        RaiseWindow(GetOwningWindow(frame))
-        local db, key, totalRows, visibleRows = getState()
-        if not db or not key then return end
-        db[key] = ClampScrollOffset((db[key] or 0) - delta, totalRows, visibleRows)
-        updateFunc()
-    end)
+    frame:SetScript("OnMouseWheel", function(_, d) fn(d) end)
 end
 
-RaiseWindow = function(frame)
-    if not frame then return end
-    GuildRadioFM.frameLevel = (GuildRadioFM.frameLevel or 100) + 10
-    if GuildRadioFM.frameLevel > 9000 then GuildRadioFM.frameLevel = 110 end
-    frame:SetFrameStrata("DIALOG")
-    frame:SetFrameLevel(GuildRadioFM.frameLevel)
-end
-
-local function RestoreFrame(frame, saved, fallbackWidth, fallbackHeight)
-    frame:SetSize(saved.width or fallbackWidth, saved.height or fallbackHeight)
-    frame:SetPoint(saved.point or "CENTER", UIParent, saved.relativePoint or "CENTER", saved.x or 0, saved.y or 0)
-end
-
-local function SetResizeLimits(frame, minWidth, minHeight, maxWidth, maxHeight)
-    if frame.SetResizeBounds then
-        frame:SetResizeBounds(minWidth, minHeight, maxWidth, maxHeight)
-        return
+-- fixed-row list; render(row, item, n) fills a row, items() returns the array
+local function List(parent, rowH, nRows, build, render, items, scrollKey)
+    local list = CreateFrame("Frame", nil, parent)
+    list.rows = {}
+    local function scroll(d)
+        R.db[scrollKey] = (R.db[scrollKey] or 0) - d
+        list:Refresh()
     end
-    if frame.SetMinResize then frame:SetMinResize(minWidth, minHeight) end
-    if frame.SetMaxResize then frame:SetMaxResize(maxWidth, maxHeight) end
-end
-
-local function MakeResizeGrip(frame, saved)
-    frame:SetResizable(true)
-    SetResizeLimits(frame, 260, 80, 900, 760)
-
-    local grip = CreateFrame("Button", nil, frame)
-    grip:SetSize(14, 14)
-    grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
-    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
-    grip:SetScript("OnMouseDown", function()
-        RaiseWindow(frame)
-        frame:StartSizing("BOTTOMRIGHT")
-    end)
-    grip:SetScript("OnMouseUp", function()
-        frame:StopMovingOrSizing()
-        GuildRadioFM:SaveWindow(frame, saved)
-        GuildRadioFM:RefreshAll()
-    end)
-end
-
-local function MakeWindow(key, name, title, width, height)
-    -- Every window remembers its own spot and rises when touched.
-    local frame = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
-    GuildRadioFM[key] = frame
-    frame:SetClampedToScreen(true)
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    ApplyPanel(frame)
-    RaiseWindow(frame)
-
-    local storageKey = key == "mainFrame" and "window" or string.gsub(key, "Frame$", "Window")
-    local saved = GuildRadioFM.db[storageKey] or GuildRadioFM.db.window
-    RestoreFrame(frame, saved, width, height)
-    MakeResizeGrip(frame, saved)
-
-    frame:SetScript("OnMouseDown", function(selfFrame) RaiseWindow(selfFrame) end)
-    frame:SetScript("OnDragStart", function(selfFrame)
-        RaiseWindow(selfFrame)
-        selfFrame:StartMoving()
-    end)
-    frame:SetScript("OnDragStop", function(selfFrame)
-        selfFrame:StopMovingOrSizing()
-        GuildRadioFM:SaveWindow(selfFrame, saved)
-    end)
-    frame:SetScript("OnSizeChanged", function()
-        RefreshWindowForKey(key)
-    end)
-
-    frame.title = MakeText(frame, "GameFontHighlightLarge", "CENTER")
-    frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -10)
-    frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -32, -10)
-    frame.title:SetText(title)
-
-    frame.close = MakeButton(frame, "X", 22, 22, function() frame:Hide() end)
-    frame.close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -7, -7)
-
-    frame:SetScript("OnShow", function(selfFrame) RaiseWindow(selfFrame) end)
-    frame:Hide()
-    return frame
-end
-
-function GuildRadioFM:CreateMainWindow()
-    if self.mainFrame then return end
-
-    local frame = MakeWindow("mainFrame", "GuildRadioFMMainFrame", "GuildRadioFM Maxi Player", 520, 420)
-    SetResizeLimits(frame, 420, 330, 900, 760)
-    if frame:GetWidth() < 420 or frame:GetHeight() < 330 then frame:SetSize(520, 420) end
-    frame.songText = MakeText(frame, "GameFontHighlight")
-    frame.songText:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -46)
-    frame.songText:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -46)
-
-    frame.progressText = MakeText(frame, "GameFontNormalSmall")
-    frame.progressText:SetPoint("TOPLEFT", frame.songText, "BOTTOMLEFT", 0, -8)
-    frame.progressText:SetPoint("TOPRIGHT", frame.songText, "BOTTOMRIGHT", 0, -8)
-
-    frame.stateText = MakeText(frame, "GameFontNormalSmall")
-    frame.stateText:SetPoint("TOPLEFT", frame.progressText, "BOTTOMLEFT", 0, -8)
-    frame.stateText:SetPoint("TOPRIGHT", frame.progressText, "BOTTOMRIGHT", 0, -8)
-
-    local controls = CreateFrame("Frame", nil, frame)
-    controls:SetPoint("TOPLEFT", frame.stateText, "BOTTOMLEFT", 0, -18)
-    controls:SetSize(320, 26)
-    frame.controls = controls
-
-    MakeButton(controls, "Back", 62, 24, function() GuildRadioFM:Back() end):SetPoint("LEFT", controls, "LEFT", 0, 0)
-    MakeButton(controls, "Play", 62, 24, function() GuildRadioFM:Play() end):SetPoint("LEFT", controls, "LEFT", 68, 0)
-    MakeButton(controls, "Stop", 62, 24, function() GuildRadioFM:Stop() end):SetPoint("LEFT", controls, "LEFT", 136, 0)
-    MakeButton(controls, "Next", 62, 24, function() GuildRadioFM:Next() end):SetPoint("LEFT", controls, "LEFT", 204, 0)
-
-    frame.volumeText = MakeText(frame, "GameFontNormalSmall")
-    frame.volumeText:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -16)
-    frame.volumeText:SetText("Volume")
-
-    frame.volumeSlider = CreateFrame("Slider", nil, frame, "OptionsSliderTemplate")
-    frame.volumeSlider:SetPoint("LEFT", frame.volumeText, "RIGHT", 12, 0)
-    frame.volumeSlider:SetPoint("RIGHT", frame, "RIGHT", -28, 0)
-    frame.volumeSlider:SetMinMaxValues(0, 100)
-    frame.volumeSlider:SetValueStep(1)
-    frame.volumeSlider:SetObeyStepOnDrag(true)
-    frame.volumeSlider:SetScript("OnValueChanged", function(_, value)
-        if GuildRadioFM.suppressVolumeUpdate then return end
-        GuildRadioFM:SetVolume(math.floor(value + 0.5))
-    end)
-    frame.volumeSlider.Low:SetText("0")
-    frame.volumeSlider.High:SetText("100")
-    frame.volumeSlider.Text:SetText("")
-
-    frame.seekText = MakeText(frame, "GameFontNormalSmall")
-    frame.seekText:SetPoint("TOPLEFT", frame.volumeText, "BOTTOMLEFT", 0, -18)
-    frame.seekText:SetText("Seek Preview")
-
-    frame.seekBackButton = MakeButton(frame, "-10", 42, 22, function() GuildRadioFM:SeekBy(-10) end)
-    frame.seekBackButton:SetPoint("LEFT", frame.seekText, "RIGHT", 12, 0)
-    frame.restartButton = MakeButton(frame, "Restart", 66, 22, function() GuildRadioFM:RestartCurrentTrack() end)
-    frame.restartButton:SetPoint("LEFT", frame.seekBackButton, "RIGHT", 6, 0)
-    frame.seekForwardButton = MakeButton(frame, "+10", 42, 22, function() GuildRadioFM:SeekBy(10) end)
-    frame.seekForwardButton:SetPoint("LEFT", frame.restartButton, "RIGHT", 6, 0)
-
-    frame.seekSlider = CreateFrame("Slider", nil, frame, "OptionsSliderTemplate")
-    frame.seekSlider:SetPoint("LEFT", frame.seekForwardButton, "RIGHT", 12, 0)
-    frame.seekSlider:SetPoint("RIGHT", frame, "RIGHT", -28, 0)
-    frame.seekSlider:SetMinMaxValues(0, 100)
-    frame.seekSlider:SetValueStep(1)
-    frame.seekSlider:SetObeyStepOnDrag(true)
-    frame.seekSlider:SetScript("OnValueChanged", function(_, value)
-        if GuildRadioFM.suppressSeekUpdate then return end
-        GuildRadioFM:SeekToPercent(math.floor(value + 0.5), true)
-    end)
-    frame.seekSlider.Low:SetText("")
-    frame.seekSlider.High:SetText("")
-    frame.seekSlider.Text:SetText("")
-    frame.seekBackButton:Disable()
-    frame.seekForwardButton:Disable()
-    frame.seekSlider:Disable()
-    AddTooltip(frame.seekBackButton, "Seek Preview", "Preview feature. WoW cannot currently seek within MP3 playback.")
-    AddTooltip(frame.seekForwardButton, "Seek Preview", "Preview feature. WoW cannot currently seek within MP3 playback.")
-    AddTooltip(frame.seekSlider, "Seek Preview", "Shows playback position when duration is known. Drag seeking is not available inside WoW MP3 playback.")
-    AddTooltip(frame.restartButton, "Restart Track", "Stops and starts the current track from the beginning.")
-
-    frame.lyricsFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.lyricsFrame:SetPoint("TOPLEFT", frame.seekText, "BOTTOMLEFT", 0, -18)
-    frame.lyricsFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 54)
-    ApplyInset(frame.lyricsFrame)
-
-    frame.lyricsTitle = MakeText(frame.lyricsFrame, "GameFontNormalSmall")
-    frame.lyricsTitle:SetPoint("TOPLEFT", frame.lyricsFrame, "TOPLEFT", 10, -8)
-    frame.lyricsTitle:SetPoint("TOPRIGHT", frame.lyricsFrame, "TOPRIGHT", -10, -8)
-    frame.lyricsTitle:SetText("Lyrics")
-    frame.lyricsTitle:SetTextColor(GOLD[1], GOLD[2], GOLD[3], GOLD[4])
-
-    frame.lyricRows = {}
-    for i = 1, 5 do
-        local row = frame.lyricsFrame:CreateFontString(nil, "OVERLAY")
-        row:SetFontObject(i == 3 and "GameFontHighlight" or "GameFontNormalSmall")
-        row:SetJustifyH("CENTER")
-        row:SetWordWrap(false)
-        row:SetPoint("LEFT", frame.lyricsFrame, "LEFT", 12, 0)
-        row:SetPoint("RIGHT", frame.lyricsFrame, "RIGHT", -12, 0)
-        if i == 1 then
-            row:SetPoint("TOP", frame.lyricsTitle, "BOTTOM", 0, -12)
-        else
-            row:SetPoint("TOP", frame.lyricRows[i - 1], "BOTTOM", 0, -8)
-        end
-        frame.lyricRows[i] = row
-    end
-
-    frame.libraryButton = MakeButton(frame, "Library", 78, 24, function() GuildRadioFM:ToggleLibraryWindow() end)
-    frame.libraryButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 18)
-    frame.playlistButton = MakeButton(frame, "Playlists", 82, 24, function() GuildRadioFM:TogglePlaylistWindow() end)
-    frame.playlistButton:SetPoint("LEFT", frame.libraryButton, "RIGHT", 8, 0)
-    frame.queueButton = MakeButton(frame, "Queue", 66, 24, function() GuildRadioFM:ToggleQueueWindow() end)
-    frame.queueButton:SetPoint("LEFT", frame.playlistButton, "RIGHT", 8, 0)
-    frame.miniButton = MakeButton(frame, "Mini", 58, 24, function() GuildRadioFM:ToggleMiniWindow() end)
-    frame.miniButton:SetPoint("LEFT", frame.queueButton, "RIGHT", 8, 0)
-    frame.settingsButton = MakeButton(frame, "Settings", 82, 24, function() GuildRadioFM:ToggleSettingsWindow() end)
-    frame.settingsButton:SetPoint("LEFT", frame.miniButton, "RIGHT", 8, 0)
-    frame.shareButton = MakeButton(frame, "Share Meta", 78, 24, function() GuildRadioFM:ShareCurrentSong() end)
-    frame.shareButton:SetPoint("LEFT", frame.settingsButton, "RIGHT", 8, 0)
-    AddTooltip(frame.shareButton, "Metadata Sharing", "Sends song metadata only. GuildRadioFM does not transmit audio files.")
-
-    self:UpdateMainWindow()
-end
-
-function GuildRadioFM:UpdateMainWindow()
-    if not self.mainFrame or not self.db then return end
-    local frame = self.mainFrame
-    local song, index = self:GetCurrentSong()
-    local count = self:GetSongCount()
-    local title = song and song.title or "No local songs found"
-
-    frame.songText:SetText("Song: " .. title .. (count > 0 and ("  (" .. index .. "/" .. count .. ")") or ""))
-    frame.progressText:SetText("Progress: " .. self:GetProgressText())
-    local playlist = self:GetSelectedPlaylist()
-    local source = "Library"
-    if self.db.playFromPlaylist and playlist then
-        source = "Playlist: " .. playlist.name
-    elseif self.db.playFromFavorites then
-        source = "Liked"
-    end
-    frame.stateText:SetText(source .. "   Shuffle: " .. (self.db.shuffle and "On" or "Off") .. "   Repeat: " .. (self.db.repeatSong and "On" or "Off") .. "   Auto-next: " .. (self.db.autoNext and "On" or "Off"))
-    frame.volumeText:SetText("Dialog Volume: " .. tostring(self.db.muted and 0 or self.db.volume) .. "%")
-    self.suppressVolumeUpdate = true
-    frame.volumeSlider:SetValue(self.db.muted and 0 or self.db.volume)
-    self.suppressVolumeUpdate = false
-    if frame.seekText and frame.seekSlider then
-        frame.seekText:SetText("Seek Preview: " .. self:GetProgressText())
-        self.suppressSeekUpdate = true
-        frame.seekSlider:SetValue(self.GetSeekPercent and self:GetSeekPercent() or 0)
-        self.suppressSeekUpdate = false
-    end
-    self:UpdateMainLyrics()
-end
-
-function GuildRadioFM:UpdateMainLyrics()
-    local frame = self.mainFrame
-    if not frame or not frame.lyricRows then return end
-
-    local display = self.GetLyricDisplayState and self:GetLyricDisplayState() or nil
-    local song = self:GetCurrentSong()
-    local lyrics = display and display.lyrics or nil
-    local currentIndex = display and tonumber(display.currentIndex) or 0
-
-    if display and display.debug then
-        frame.lyricsTitle:SetText("Lyrics - Test Playback")
-    elseif display and display.active then
-        frame.lyricsTitle:SetText("Lyrics - Live")
-    else
-        frame.lyricsTitle:SetText("Lyrics")
-    end
-
-    if not song and not (display and display.debug) then
-        frame.lyricRows[1]:SetText("")
-        frame.lyricRows[2]:SetText("")
-        frame.lyricRows[3]:SetText("No song selected")
-        frame.lyricRows[4]:SetText("Choose a track to see synced lyrics.")
-        frame.lyricRows[5]:SetText("")
-    elseif type(lyrics) ~= "table" or #lyrics == 0 then
-        frame.lyricRows[1]:SetText("")
-        frame.lyricRows[2]:SetText("")
-        frame.lyricRows[3]:SetText("No lyrics for this track yet")
-        frame.lyricRows[4]:SetText("Album packs can add timed lines by song ID.")
-        frame.lyricRows[5]:SetText("")
-    else
-        local centerIndex = currentIndex
-        if centerIndex < 1 then centerIndex = 1 end
-        for rowIndex, row in ipairs(frame.lyricRows) do
-            local lyricIndex = centerIndex + rowIndex - 3
-            local line = lyrics[lyricIndex]
-            row:SetText(line and line.text or "")
-        end
-        if currentIndex == 0 and lyrics[1] then
-            frame.lyricRows[3]:SetText("...")
-            frame.lyricRows[4]:SetText(lyrics[1].text or "")
-        end
-    end
-
-    for rowIndex, row in ipairs(frame.lyricRows) do
-        if rowIndex == 3 then
-            row:SetFontObject("GameFontHighlight")
-            row:SetTextColor(LYRIC_CURRENT[1], LYRIC_CURRENT[2], LYRIC_CURRENT[3], LYRIC_CURRENT[4])
-        elseif rowIndex == 2 or rowIndex == 4 then
-            row:SetFontObject("GameFontNormalSmall")
-            row:SetTextColor(LYRIC_CONTEXT[1], LYRIC_CONTEXT[2], LYRIC_CONTEXT[3], LYRIC_CONTEXT[4])
-        else
-            row:SetFontObject("GameFontNormalSmall")
-            row:SetTextColor(LYRIC_MUTED[1], LYRIC_MUTED[2], LYRIC_MUTED[3], LYRIC_MUTED[4])
-        end
-    end
-end
-
-function GuildRadioFM:ToggleMainWindow()
-    self:CreateMainWindow()
-    if self.mainFrame:IsShown() then self.mainFrame:Hide() else self.mainFrame:Show() self:UpdateMainWindow() end
-end
-
-function GuildRadioFM:CreateMiniWindow()
-    if self.miniFrame then return end
-
-    local frame = MakeWindow("miniFrame", "GuildRadioFMMiniFrame", "GRFM", 340, 98)
-    SetResizeLimits(frame, 320, 92, 650, 220)
-    if frame:GetWidth() > 430 or frame:GetHeight() > 136 or frame:GetWidth() < 320 or frame:GetHeight() < 92 then
-        frame:SetSize(340, 98)
-        if self.db and self.db.miniWindow then
-            self.db.miniWindow.width = 340
-            self.db.miniWindow.height = 98
-        end
-    end
-
-    frame.songText = MakeText(frame, "GameFontHighlightSmall")
-    frame.songText:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -24)
-    frame.songText:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -24)
-
-    frame.progressText = MakeText(frame, "GameFontDisableSmall")
-    frame.progressText:SetPoint("TOPLEFT", frame.songText, "BOTTOMLEFT", 0, -2)
-    frame.progressText:SetPoint("TOPRIGHT", frame.songText, "BOTTOMRIGHT", 0, -2)
-
-    frame.sourceText = MakeText(frame, "GameFontDisableSmall")
-    frame.sourceText:SetPoint("TOPLEFT", frame.progressText, "BOTTOMLEFT", 0, -2)
-    frame.sourceText:SetPoint("TOPRIGHT", frame.progressText, "BOTTOMRIGHT", 0, -2)
-    frame.sourceText:SetTextColor(GOLD[1], GOLD[2], GOLD[3], GOLD[4])
-
-    frame.backButton = MakeButton(frame, "<", 30, 20, function() GuildRadioFM:Back() end)
-    frame.backButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 7, 6)
-    frame.playButton = MakeButton(frame, "Play", 42, 20, function() GuildRadioFM:Play() end)
-    frame.playButton:SetPoint("LEFT", frame.backButton, "RIGHT", 4, 0)
-    frame.stopButton = MakeButton(frame, "Stop", 42, 20, function() GuildRadioFM:Stop() end)
-    frame.stopButton:SetPoint("LEFT", frame.playButton, "RIGHT", 4, 0)
-    frame.nextButton = MakeButton(frame, ">", 30, 20, function() GuildRadioFM:Next() end)
-    frame.nextButton:SetPoint("LEFT", frame.stopButton, "RIGHT", 4, 0)
-    frame.likeButton = MakeButton(frame, "Like", 42, 20, function() GuildRadioFM:ToggleFavorite() end)
-    frame.likeButton:SetPoint("LEFT", frame.nextButton, "RIGHT", 4, 0)
-    frame.muteButton = MakeButton(frame, "Mute", 46, 20, function() GuildRadioFM:ToggleMute() end)
-    frame.muteButton:SetPoint("LEFT", frame.likeButton, "RIGHT", 4, 0)
-    frame.restartButton = MakeButton(frame, "Restart", 54, 20, function() GuildRadioFM:RestartCurrentTrack() end)
-    frame.restartButton:SetPoint("LEFT", frame.muteButton, "RIGHT", 4, 0)
-
-    frame.volumeText = MakeText(frame, "GameFontDisableSmall")
-    frame.volumeText:SetPoint("BOTTOMLEFT", frame.backButton, "TOPLEFT", 0, 4)
-
-    frame.volumeSlider = CreateFrame("Slider", nil, frame, "OptionsSliderTemplate")
-    frame.volumeSlider:SetPoint("LEFT", frame.volumeText, "RIGHT", 6, 0)
-    frame.volumeSlider:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
-    frame.volumeSlider:SetMinMaxValues(0, 100)
-    frame.volumeSlider:SetValueStep(1)
-    frame.volumeSlider:SetObeyStepOnDrag(true)
-    frame.volumeSlider:SetScript("OnValueChanged", function(_, value)
-        if GuildRadioFM.suppressMiniVolumeUpdate then return end
-        GuildRadioFM:SetVolume(math.floor(value + 0.5))
-    end)
-    frame.volumeSlider.Low:SetText("")
-    frame.volumeSlider.High:SetText("")
-    frame.volumeSlider.Text:SetText("")
-
-    self:UpdateMiniWindow()
-end
-
-function GuildRadioFM:UpdateMiniWindow()
-    if not self.miniFrame then return end
-    local frame = self.miniFrame
-    local playlist = self:GetSelectedPlaylist()
-    local source = "Library"
-    local song, index = self:GetCurrentSong()
-    local count = self:GetSongCount()
-    local title = song and song.title or self:GetCurrentTitle()
-    if self.db and self.db.playFromPlaylist and playlist then
-        source = playlist.name
-    elseif self.db and self.db.playFromFavorites then
-        source = "Liked"
-    end
-    frame.songText:SetText("Song: " .. (self:IsFavorite() and "* " or "") .. tostring(title or "No song selected") .. (count > 0 and ("  (" .. tostring(index or 0) .. "/" .. tostring(count) .. ")") or ""))
-    frame.progressText:SetText("Progress: " .. self:GetProgressText())
-    frame.sourceText:SetText("List: " .. source .. "   S:" .. (self.db and self.db.shuffle and "On" or "Off") .. " R:" .. (self.db and self.db.repeatSong and "On" or "Off") .. " A:" .. (self.db and self.db.autoNext and "On" or "Off"))
-    frame.likeButton:SetText(self:IsFavorite() and "Liked" or "Like")
-    frame.muteButton:SetText(self.db and self.db.muted and "Unmute" or "Mute")
-    frame.volumeText:SetText("Vol: " .. tostring(self.db and (self.db.muted and 0 or self.db.volume) or 0) .. "%")
-    self.suppressMiniVolumeUpdate = true
-    frame.volumeSlider:SetValue(self.db and (self.db.muted and 0 or self.db.volume) or 0)
-    self.suppressMiniVolumeUpdate = false
-end
-
-function GuildRadioFM:ToggleMiniWindow()
-    self:CreateMiniWindow()
-    if self.miniFrame:IsShown() then self.miniFrame:Hide() else self.miniFrame:Show() self:UpdateMiniWindow() end
-end
-
-function GuildRadioFM:CreateToast()
-    if self.toastFrame then return end
-
-    local frame = CreateFrame("Frame", "GuildRadioFMToastFrame", UIParent, "BackdropTemplate")
-    self.toastFrame = frame
-    frame:SetSize(360, 54)
-    frame:SetPoint("TOP", UIParent, "TOP", 0, -140)
-    frame:SetFrameStrata("DIALOG")
-    ApplyPanel(frame)
-
-    frame.title = MakeText(frame, "GameFontNormalSmall", "CENTER")
-    frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -8)
-    frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -8)
-    frame.title:SetText("Now Playing")
-
-    frame.songText = MakeText(frame, "GameFontHighlight", "CENTER")
-    frame.songText:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -4)
-    frame.songText:SetPoint("TOPRIGHT", frame.title, "BOTTOMRIGHT", 0, -4)
-    frame:Hide()
-end
-
-function GuildRadioFM:ShowNowPlayingToast(song)
-    self:CreateToast()
-    if not self.toastFrame then return end
-
-    self.toastSerial = (self.toastSerial or 0) + 1
-    local serial = self.toastSerial
-    self.toastFrame.songText:SetText(song and song.title or self:GetCurrentTitle())
-    self.toastFrame:Show()
-
-    if C_Timer and C_Timer.After then
-        C_Timer.After(3, function()
-            if GuildRadioFM.toastSerial == serial and GuildRadioFM.toastFrame then
-                GuildRadioFM.toastFrame:Hide()
-            end
-        end)
-    end
-end
-
-function GuildRadioFM:IsLibrarySongVisible(songIndex)
-    songIndex = tonumber(songIndex)
-    if not songIndex then return false end
-    for _, item in ipairs(self:GetFilteredSongs()) do
-        if item.index == songIndex then return true end
-    end
-    return false
-end
-
-function GuildRadioFM:SelectLibrarySong(songIndex)
-    songIndex = tonumber(songIndex)
-    if not songIndex or not self:GetSong(songIndex) then return false end
-    self.db.selectedLibrarySongIndex = songIndex
-    self:UpdateLibraryWindow()
-    return true
-end
-
-function GuildRadioFM:PlaySelectedLibrarySong()
-    local songIndex = self.db and self.db.selectedLibrarySongIndex
-    if not self:IsLibrarySongVisible(songIndex) then
-        self:Print("Select a song first.")
-        return
-    end
-    self:PlaySong(songIndex)
-end
-
-function GuildRadioFM:QueueSelectedLibrarySong()
-    local songIndex = self.db and self.db.selectedLibrarySongIndex
-    if not self:IsLibrarySongVisible(songIndex) then
-        self:Print("Select a song first.")
-        return
-    end
-    self:AddToQueue(songIndex)
-end
-
-function GuildRadioFM:CreateLibraryWindow()
-    if self.libraryFrame then return end
-
-    local frame = MakeWindow("libraryFrame", "GuildRadioFMLibraryFrame", "Local Library", 520, 520)
-    frame.allButton = MakeButton(frame, "All", 54, 22, function() GuildRadioFM:SetLibraryView("all") end)
-    frame.allButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -44)
-    frame.favoriteButton = MakeButton(frame, "Liked", 64, 22, function() GuildRadioFM:SetLibraryView("favorites") end)
-    frame.favoriteButton:SetPoint("LEFT", frame.allButton, "RIGHT", 8, 0)
-    frame.secretButton = MakeButton(frame, "Secret Frequency", 128, 22, function() GuildRadioFM:SetLibraryView("secret") end)
-    frame.secretButton:SetPoint("LEFT", frame.favoriteButton, "RIGHT", 8, 0)
-    frame.playLikedButton = MakeButton(frame, "Play Liked", 88, 22, function() GuildRadioFM:PlayFavoriteEntry(1) end)
-    frame.playLikedButton:SetPoint("LEFT", frame.secretButton, "RIGHT", 8, 0)
-    frame.unlikeButton = MakeButton(frame, "Unlike", 70, 22, function() GuildRadioFM:RemoveFavorite() end)
-    frame.unlikeButton:SetPoint("LEFT", frame.playLikedButton, "RIGHT", 8, 0)
-
-    frame.countText = MakeText(frame, "GameFontDisableSmall", "RIGHT")
-    frame.countText:SetPoint("LEFT", frame.unlikeButton, "RIGHT", 8, 0)
-    frame.countText:SetPoint("RIGHT", frame, "RIGHT", -18, -44)
-
-    frame.searchBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-    frame.searchBox:SetPoint("TOPLEFT", frame.allButton, "BOTTOMLEFT", 0, -10)
-    frame.searchBox:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -76)
-    frame.searchBox:SetHeight(24)
-    frame.searchBox:SetAutoFocus(false)
-    frame.searchBox:SetText(self.db.search or "")
-    frame.searchBox:SetScript("OnTextChanged", function(box)
-        GuildRadioFM.db.search = box:GetText() or ""
-        GuildRadioFM.db.libraryScroll = 0
-        GuildRadioFM:UpdateLibraryWindow()
-    end)
-
-    frame.playSongButton = MakeButton(frame, "Play Song", 88, 22, function() GuildRadioFM:PlaySelectedLibrarySong() end)
-    frame.playSongButton:SetPoint("TOPLEFT", frame.searchBox, "BOTTOMLEFT", 0, -8)
-    frame.queueSongButton = MakeButton(frame, "Add To Queue", 112, 22, function() GuildRadioFM:QueueSelectedLibrarySong() end)
-    frame.queueSongButton:SetPoint("LEFT", frame.playSongButton, "RIGHT", 8, 0)
-    frame.queueOpenButton = MakeButton(frame, "Queue", 70, 22, function() GuildRadioFM:ToggleQueueWindow(true) end)
-    frame.queueOpenButton:SetPoint("LEFT", frame.queueSongButton, "RIGHT", 8, 0)
-
-    frame.selectedText = MakeText(frame, "GameFontDisableSmall", "RIGHT")
-    frame.selectedText:SetPoint("LEFT", frame.queueOpenButton, "RIGHT", 8, 0)
-    frame.selectedText:SetPoint("RIGHT", frame, "RIGHT", -18, -108)
-
-    frame.list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.list:SetPoint("TOPLEFT", frame.playSongButton, "BOTTOMLEFT", -2, -12)
-    frame.list:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18)
-    ApplyInset(frame.list)
-    frame.rows = {}
-    AddMouseWheelScroll(frame.list, function()
-        local filteredRows = GuildRadioFM:GetFilteredSongs()
-        return GuildRadioFM.db, "libraryScroll", #filteredRows, GetVisibleRowCount(frame.list, 24, #frame.rows)
-    end, function() GuildRadioFM:UpdateLibraryWindow() end)
-
-    for i = 1, 30 do
-        local row = CreateFrame("Button", nil, frame.list, "BackdropTemplate")
-        row:SetHeight(22)
-        row:SetPoint("TOPLEFT", frame.list, "TOPLEFT", 4, -4 - ((i - 1) * 24))
-        row:SetPoint("TOPRIGHT", frame.list, "TOPRIGHT", -4, -4 - ((i - 1) * 24))
-        row.text = MakeText(row, "GameFontNormalSmall")
-        row.text:SetPoint("LEFT", row, "LEFT", 6, 0)
-        row.text:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-        row:SetScript("OnMouseDown", function(button) RaiseWindow(GetOwningWindow(button)) end)
+    for i = 1, nRows do
+        local row = CreateFrame("Button", nil, list)
+        row:SetHeight(rowH)
+        row:SetPoint("TOPLEFT", 0, -(i - 1) * rowH)
+        row:SetPoint("TOPRIGHT", 0, -(i - 1) * rowH)
         row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        AddMouseWheelScroll(row, function()
-            local filteredRows = GuildRadioFM:GetFilteredSongs()
-            return GuildRadioFM.db, "libraryScroll", #filteredRows, GetVisibleRowCount(frame.list, 24, #frame.rows)
-        end, function() GuildRadioFM:UpdateLibraryWindow() end)
-        row:SetScript("OnClick", function(button, mouseButton)
-            if not button.songIndex then return end
-            if mouseButton == "RightButton" then
-                if GuildRadioFM.db.libraryView == "favorites" then
-                    GuildRadioFM:RemoveFavorite(button.songIndex)
-                else
-                    GuildRadioFM:AddSongToSelectedPlaylist(button.songIndex)
-                end
-            else
-                GuildRadioFM:SelectLibrarySong(button.songIndex)
-            end
-        end)
-        row:SetScript("OnDoubleClick", function(button)
-            if button.songIndex then
-                GuildRadioFM:SelectLibrarySong(button.songIndex)
-                GuildRadioFM:PlaySelectedLibrarySong()
-            end
-        end)
-        frame.rows[i] = row
+        row.hl = Fill(row, C.text, 0)
+        row.mark = Tex(row, "ARTWORK", C.acc)
+        row.mark:SetPoint("TOPLEFT"); row.mark:SetPoint("BOTTOMLEFT"); row.mark:SetWidth(2)
+        row.mark:Hide()
+        function row:Hover(h) self.hl:SetAlpha(h and 0.045 or (self.selected and 0.03 or 0)) end
+        row.wheel = scroll
+        Wheel(row, scroll)
+        build(row)
+        list.rows[i] = row
     end
-
-    self:UpdateLibraryWindow()
+    Wheel(list, scroll)
+    function list:Refresh()
+        local data = items() or {}
+        local off = math.max(0, math.min(R.db[scrollKey] or 0, #data - nRows))
+        R.db[scrollKey] = off
+        for i, row in ipairs(self.rows) do
+            local item = data[i + off]
+            row.item = item
+            row.selected = false
+            row.mark:Hide()
+            if item then render(row, item, i + off); row:Show() else row:Hide() end
+            row:Hover(false)
+        end
+        if #data == 0 and self.empty then
+            local row = self.rows[1]
+            row.item = nil
+            self.empty(row)
+            row:Show()
+        end
+        self.count = #data
+    end
+    return list
 end
 
-function GuildRadioFM:GetFilteredSongs()
+local function Eyebrow(parent, text)
+    local fs = Text(parent, 10, C.faint, BODY_FONT)
+    fs:SetText(string.upper(text))
+    return fs
+end
+
+local function Fmt(sec)
+    sec = math.max(0, math.floor(sec or 0))
+    return string.format("%d:%02d", math.floor(sec / 60), sec % 60)
+end
+
+local function EB() return R.Live end
+
+-- ---------- main window ----------
+local TABS = { { "now", "Now Playing" }, { "library", "Library" }, { "playlists", "Playlists" }, { "live", "Live" }, { "settings", "Settings" } }
+local W, H = 640, 452          -- design size; shown scaled (db.scale, default 0.8)
+
+function R:CreateMainWindow()
+    if self.mainFrame then return end
+    local f = CreateFrame("Frame", "GuildRadioFMMainFrame", UIParent)
+    self.mainFrame = f
+    f:SetSize(W, H)
+    f:SetFrameStrata("HIGH")
+    f:SetClampedToScreen(true)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", function(selfF) selfF:StopMovingOrSizing(); R:SaveWindow(selfF, R.db.window) end)
+    local w = self.db.window or {}
+    f:SetPoint(w.point or "CENTER", UIParent, w.relativePoint or "CENTER", w.x or 0, w.y or 0)
+    Fill(f, C.bg)
+    f.art = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+    f.art:SetAllPoints()
+    f.shade = Tex(f, "BACKGROUND", C.shade)
+    f.shade:SetDrawLayer("BACKGROUND", 2)
+    f.shade:SetAllPoints()
+    f.headShade = Tex(f, "BACKGROUND", { 0, 0, 0 }, 0.45)
+    f.headShade:SetDrawLayer("BACKGROUND", 3)
+    f.headShade:SetPoint("TOPLEFT"); f.headShade:SetPoint("TOPRIGHT"); f.headShade:SetHeight(88)
+    Outline(f, C.acc, 0.25)
+    if UISpecialFrames then table.insert(UISpecialFrames, "GuildRadioFMMainFrame") end
+
+    -- header
+    f.emblem = f:CreateTexture(nil, "ARTWORK")
+    f.emblem:SetTexture(EMBLEM)
+    f.emblem:SetSize(38, 38)
+    f.emblem:SetPoint("TOPLEFT", 14, -10)
+    f.logo = Text(f, 26, C.acc, LOGO_FONT)
+    f.logo:SetShadowColor(0, 0, 0, 1)
+    f.logo:SetShadowOffset(1, -1)
+    f.logo:SetPoint("LEFT", f.emblem, "RIGHT", 10, 1)
+    f.logo:SetText("GuildRadio")
+    f.logoFM = Text(f, 11, C.dim, TITLE_FONT)
+    f.logoFM:SetPoint("BOTTOMLEFT", f.logo, "BOTTOMRIGHT", 5, 4)
+    f.logoFM:SetText("FM")
+    f.close = IconButton(f, "close", 14, function() f:Hide() end, nil)
+    f.close:SetPoint("TOPRIGHT", -8, -10)
+    f.miniBtn = TextButton(f, "Mini player", 82, 22, function() R:ToggleMiniWindow() end, "ghost")
+    f.miniBtn.label:SetFont(BODY_FONT, 11, "")
+    f.miniBtn:SetPoint("RIGHT", f.close, "LEFT", -6, 0)
+    f.headLive = Text(f, 11, C.live, BODY_FONT, "RIGHT")
+    f.headLive:SetPoint("RIGHT", f.miniBtn, "LEFT", -10, 0)
+
+    -- tabs
+    f.tabs = {}
+    local x = 18
+    for _, t in ipairs(TABS) do
+        local key, label = t[1], t[2]
+        local b = CreateFrame("Button", nil, f)
+        b.label = Text(b, 13, C.dim, BODY_FONT, "CENTER")
+        b.label:SetText(label)
+        b.label:SetPoint("CENTER")
+        b:SetSize(b.label:GetStringWidth() + 20, 30)
+        b:SetPoint("TOPLEFT", x, -58)
+        x = x + b:GetWidth() + 4
+        b.bar = Tex(b, "ARTWORK", C.acc)
+        b.bar:SetPoint("BOTTOMLEFT", 8, 0); b.bar:SetPoint("BOTTOMRIGHT", -8, 0); b.bar:SetHeight(2)
+        if key == "live" then
+            b.dot = Tex(b, "OVERLAY", C.live)
+            b.dot:SetSize(6, 6)
+            b.dot:SetPoint("LEFT", b.label, "RIGHT", 4, 4)
+            b.dot:Hide()
+        end
+        function b:Hover(h) if R.db.tab ~= key then SetColor(self.label, h and C.text or C.dim) end end
+        Tip(b, nil)
+        b:SetScript("OnClick", function() R:ShowTab(key) end)
+        f.tabs[key] = b
+    end
+    local sep = Tex(f, "BORDER", C.line)
+    sep:SetPoint("TOPLEFT", 0, -88); sep:SetPoint("TOPRIGHT", 0, -88); sep:SetHeight(1)
+
+    f.pages = {}
+    for _, t in ipairs(TABS) do
+        local p = CreateFrame("Frame", nil, f)
+        p:SetPoint("TOPLEFT", 18, -102)
+        p:SetPoint("BOTTOMRIGHT", -18, 16)
+        p:Hide()
+        f.pages[t[1]] = p
+    end
+    self:BuildNowPage(f.pages.now)
+    self:BuildLibraryPage(f.pages.library)
+    self:BuildPlaylistPage(f.pages.playlists)
+    self:BuildLivePage(f.pages.live)
+    self:BuildSettingsPage(f.pages.settings)
+
+    local acc = 0
+    f:SetScript("OnUpdate", function(_, el)
+        acc = acc + el
+        if acc < 0.1 then return end
+        acc = 0
+        R:UpdateProgress()
+    end)
+    self:AddScaleGrip(f, "scale")
+    f:SetScale(self.db.scale or 0.8)
+    self:ApplyBackdrop()
+    f:Hide()
+    self:ShowTab(self.db.tab or "now", true)
+end
+
+-- scale around the top-left corner so the window stays put while it grows or shrinks
+function R:SetFrameScale(frame, key, scale)
+    scale = math.max(0.5, math.min(1.4, scale))
+    local old = frame:GetScale()
+    local left, top = frame:GetLeft(), frame:GetTop()
+    frame:SetScale(scale)
+    if left and top then
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * old / scale, top * old / scale)
+    end
+    self.db[key] = scale
+    local store = frame == self.miniFrame and self.db.miniWindow or self.db.window
+    self:SaveWindow(frame, store)
+end
+
+-- drag the bottom-right corner to resize (scales the whole window, text and all)
+function R:AddScaleGrip(frame, key)
+    local g = CreateFrame("Button", nil, frame)
+    g:SetSize(16, 16)
+    g:SetPoint("BOTTOMRIGHT", -2, 2)
+    g.lines = {}
+    for i = 1, 3 do
+        local t = Tex(g, "OVERLAY", C.dim)
+        t:SetSize(2, 2)
+        t:SetPoint("BOTTOMRIGHT", -2 - (i - 1) * 4, 2)
+        local u = Tex(g, "OVERLAY", C.dim)
+        u:SetSize(2, 2)
+        u:SetPoint("BOTTOMRIGHT", -2, 2 + (i - 1) * 4)
+        g.lines[#g.lines + 1] = t; g.lines[#g.lines + 1] = u
+    end
+    local d = Tex(g, "OVERLAY", C.dim); d:SetSize(2, 2); d:SetPoint("BOTTOMRIGHT", -6, 6); g.lines[#g.lines + 1] = d
+    function g:Hover(h)
+        local c = h and C.acc or C.dim
+        for _, t in ipairs(self.lines) do t:SetVertexColor(c[1], c[2], c[3], 1) end
+    end
+    Tip(g, "Drag to resize")
+    local st
+    g:SetScript("OnMouseDown", function()
+        local x = GetCursorPosition()
+        st = { x = x, scale = frame:GetScale(), width = frame:GetWidth() * frame:GetEffectiveScale() }
+    end)
+    g:SetScript("OnMouseUp", function() st = nil; R:RefreshAll() end)
+    g:SetScript("OnUpdate", function()
+        if not st then return end
+        local x = GetCursorPosition()
+        local want = st.scale * (st.width + (x - st.x)) / st.width
+        if math.abs(want - frame:GetScale()) > 0.005 then R:SetFrameScale(frame, key, want) end
+    end)
+    return g
+end
+
+function R:ApplyBackdrop()
+    local f = self.mainFrame
+    if not f then return end
+    local choice = self.db.backdrop or "kalimdor"
+    local path
+    for _, b in ipairs(BACKDROPS) do if b.key == choice then path = b.path end end
+    if path then
+        f.art:SetTexture(path)
+        -- loading screens are 4:3; trim top and bottom to the window's shape
+        local cut = (1 - (4 / 3) / (W / H)) / 2
+        f.art:SetTexCoord(0, 1, cut, 1 - cut)
+        f.art:Show()
+        f.shade:SetAlpha(1)
+    else
+        f.art:Hide()
+        f.shade:SetAlpha(0)
+    end
+end
+
+function R:ShowTab(key, quiet)
+    self:CreateMainWindow()
+    local f = self.mainFrame
+    if not f.pages[key] then key = "now" end
+    self.db.tab = key
+    for k, p in pairs(f.pages) do if k == key then p:Show() else p:Hide() end end
+    for k, b in pairs(f.tabs) do
+        SetColor(b.label, k == key and C.text or C.dim)
+        if k == key then b.bar:Show() else b.bar:Hide() end
+    end
+    if not quiet then f:Show() end
+    self:RefreshAll()
+end
+
+function R:ToggleTab(key)
+    self:CreateMainWindow()
+    if self.mainFrame:IsShown() and self.db.tab == key then self.mainFrame:Hide() else self:ShowTab(key) end
+end
+
+function R:ToggleMainWindow()
+    self:CreateMainWindow()
+    if self.mainFrame:IsShown() then self.mainFrame:Hide() else self:ShowTab(self.db.tab or "now") end
+end
+function R:ToggleLibraryWindow() self:ToggleTab("library") end
+function R:TogglePlaylistWindow() self:ToggleTab("playlists") end
+function R:ToggleSettingsWindow() self:ToggleTab("settings") end
+function R:ToggleAddSongsWindow() self:ToggleTab("settings") end
+function R:ToggleLiveWindow() self:ToggleTab("live") end
+
+local function PageShown(key)
+    local f = R.mainFrame
+    return f and f:IsShown() and f.pages[key]:IsShown()
+end
+
+-- what's going on, in one line, for eyebrows and the mini player
+function R:StatusLine()
+    local eb = EB()
+    if eb and eb.live then return "ON AIR", C.live end
+    if eb and eb.tuned then return "TUNED IN  ·  " .. string.upper(eb.Short(eb.tuned)), C.acc2 end
+    if self.db.isPlaying then
+        if self.db.playFromPlaylist then
+            local p = self:GetSelectedPlaylist()
+            return "PLAYLIST  ·  " .. string.upper(p and p.name or ""), C.faint
+        elseif self.db.playFromFavorites then return "LIKED SONGS", C.faint end
+        return "NOW PLAYING", C.faint
+    end
+    return "STOPPED", C.faint
+end
+
+-- ---------- Now Playing ----------
+function R:BuildNowPage(p)
+    local art = CreateFrame("Frame", nil, p)
+    art:SetSize(170, 170)
+    art:SetPoint("TOPLEFT", 0, -6)
+    Fill(art, C.surface)
+    Outline(art, C.line)
+    art.glow = art:CreateTexture(nil, "ARTWORK")
+    art.glow:SetTexture(EMBLEM)
+    art.glow:SetSize(128, 128)
+    art.glow:SetPoint("CENTER", 0, 6)
+    art.badge = Text(art, 10, C.live, BODY_FONT, "CENTER")
+    art.badge:SetPoint("BOTTOM", 0, 10)
+    p.art = art
+    local t = 0
+    art:SetScript("OnUpdate", function(_, el)
+        t = t + el
+        local a = R.db.isPlaying and (0.8 + 0.2 * math.sin(t * 2.4)) or 0.45
+        art.glow:SetAlpha(a)
+    end)
+
+    local x = 196
+    p.eyebrow = Eyebrow(p, "Now playing")
+    p.eyebrow:SetPoint("TOPLEFT", x, -14)
+    p.title = Text(p, 22, C.acc, TITLE_FONT)
+    p.title:SetShadowColor(0, 0, 0, 1)
+    p.title:SetShadowOffset(1, -1)
+    p.title:SetPoint("TOPLEFT", x, -32)
+    p.title:SetPoint("RIGHT", p, "RIGHT", 0, 0)
+    p.sub = Text(p, 13, C.dim)
+    p.sub:SetPoint("TOPLEFT", p.title, "BOTTOMLEFT", 0, -8)
+    p.sub:SetPoint("RIGHT", p, "RIGHT", 0, 0)
+
+    p.bar = CreateFrame("Frame", nil, p)
+    p.bar:SetPoint("TOPLEFT", x, -102)
+    p.bar:SetPoint("RIGHT", p, "RIGHT", 0, 0)
+    p.bar:SetHeight(4)
+    Fill(p.bar, C.raised)
+    p.barFill = Tex(p.bar, "ARTWORK", C.acc)
+    p.barFill:SetPoint("TOPLEFT"); p.barFill:SetPoint("BOTTOMLEFT")
+    p.elapsed = Text(p, 11, C.dim)
+    p.elapsed:SetPoint("TOPLEFT", p.bar, "BOTTOMLEFT", 0, -6)
+    p.total = Text(p, 11, C.dim, BODY_FONT, "RIGHT")
+    p.total:SetPoint("TOPRIGHT", p.bar, "BOTTOMRIGHT", 0, -6)
+
+    -- transport
+    local mid = CreateFrame("Frame", nil, p)
+    mid:SetSize(250, 50)
+    mid:SetPoint("TOP", p.bar, "BOTTOM", 0, -24)
+    p.shuffle = IconButton(mid, "shuffle", 16, function() R:ToggleShuffle() end, "Shuffle")
+    p.prev = IconButton(mid, "prev", 18, function() R:Back() end, "Previous")
+    p.play = CreateFrame("Button", nil, mid)
+    p.play:SetSize(50, 50)
+    p.play.bg = Fill(p.play, C.acc)
+    p.play.icon = Icon(p.play, "play", 22)
+    p.play.icon:SetPoint("CENTER", 1, 0)
+    p.play.icon:SetVertexColor(0.05, 0.04, 0.09)
+    function p.play:Hover(h) self.bg:SetVertexColor(C.acc[1] + (h and 0.08 or 0), C.acc[2] + (h and 0.08 or 0), math.min(1, C.acc[3]), 1) end
+    Tip(p.play, nil)
+    p.play:SetScript("OnClick", function() if R.db.isPlaying then R:Stop() else R:Play() end end)
+    p.next = IconButton(mid, "next", 18, function() R:Next() end, "Next")
+    p["repeat"] = IconButton(mid, "repeat", 16, function() R:ToggleRepeat() end, "Repeat this song")
+    p.play:SetPoint("CENTER")
+    p.prev:SetPoint("RIGHT", p.play, "LEFT", -14, 0)
+    p.shuffle:SetPoint("RIGHT", p.prev, "LEFT", -12, 0)
+    p.next:SetPoint("LEFT", p.play, "RIGHT", 14, 0)
+    p["repeat"]:SetPoint("LEFT", p.next, "RIGHT", 12, 0)
+
+    -- like + volume
+    p.like = IconButton(p, "heartline", 16, function() R:ToggleFavorite() end, "Like")
+    p.like:SetPoint("TOPLEFT", p.bar, "BOTTOMLEFT", -6, -96)
+    p.vol = IconButton(p, "volume", 16, function() R:ToggleMute() end, "Mute")
+    p.vol:SetPoint("LEFT", p.like, "RIGHT", 10, 0)
+    p.volume = Slider(p, 150, function(v) R.suppressVolumeUpdate = true; R:SetVolume(v); R.suppressVolumeUpdate = false end)
+    p.volume:SetPoint("LEFT", p.vol, "RIGHT", 4, 0)
+    p.volText = Text(p, 11, C.dim)
+    p.volText:SetPoint("LEFT", p.volume, "RIGHT", 10, 0)
+
+    -- live banner
+    p.banner = CreateFrame("Frame", nil, p)
+    p.banner:SetPoint("BOTTOMLEFT", 0, 0)
+    p.banner:SetPoint("BOTTOMRIGHT", 0, 0)
+    p.banner:SetHeight(46)
+    Fill(p.banner, C.surface)
+    Outline(p.banner, C.line)
+    p.banner.icon = Icon(p.banner, "live", 18)
+    p.banner.icon:SetPoint("LEFT", 14, 0)
+    p.banner.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
+    p.banner.text = Text(p.banner, 13, C.text)
+    p.banner.text:SetPoint("LEFT", p.banner.icon, "RIGHT", 10, 0)
+    p.banner.btn = TextButton(p.banner, "Tune in", 92, 26, function()
+        local eb = EB()
+        if eb.tuned then eb:TuneOut() else eb:TuneIn() end
+    end, "primary")
+    p.banner.btn:SetPoint("RIGHT", -10, 0)
+    p.banner.text:SetPoint("RIGHT", p.banner.btn, "LEFT", -10, 0)
+end
+
+function R:UpdateNowPage()
+    if not PageShown("now") then return end
+    local p = self.mainFrame.pages.now
+    local song, index = self:GetCurrentSong()
+    local eyebrow, ec = self:StatusLine()
+    p.eyebrow:SetText(eyebrow)
+    SetColor(p.eyebrow, ec)
+    p.title:SetText(song and song.title or "No songs yet")
+    local eb = EB()
+    local sub
+    if eb and eb.missing then sub = "You don't have this song. Get the latest GuildRadioFM from your DJ."
+    elseif eb and eb.waiting then sub = "Tuned in. You'll join at the next song."
+    elseif eb and eb:JoiningIn() then sub = string.format("Joining in %ds, right in time with the room", math.ceil(eb:JoiningIn()))
+    else
+        sub = song and (song.artist or (song.id and string.match(song.id, "^noyze") and "Noyze Komplaynt") or "Guild library") or "Add songs in SongList.lua"
+        if song then sub = sub .. "  ·  " .. index .. " of " .. self:GetSongCount() end
+    end
+    p.sub:SetText(sub)
+    p.play.icon:SetIcon(self.db.isPlaying and "stop" or "play")
+    p.shuffle:SetActive(self.db.shuffle)
+    p["repeat"]:SetActive(self.db.repeatSong)
+    local liked = index and self:IsFavorite(index)
+    p.like.icon:SetIcon(liked and "heart" or "heartline")
+    p.like:SetActive(liked)
+    p.vol.icon:SetIcon(self.db.muted and "mute" or "volume")
+    if not p.volume.dragging then p.volume:SetValue(self.db.muted and 0 or self.db.volume) end
+    p.volText:SetText(self.db.muted and "muted" or (tostring(self.db.volume) .. "%"))
+    p.art.badge:SetText(eb and eb.live and "ON AIR" or (eb and eb.tuned and "LIVE" or ""))
+
+    local dj = eb and eb:CurrentDJ()
+    if eb and (eb.tuned or (dj and not eb.live)) then
+        local d = eb.tuned and eb.djs[eb.tuned] or dj
+        local name = d and d.name or eb.Short(eb.tuned)
+        local count = d and d.count or 0
+        p.banner.text:SetText(eb.tuned and ("In " .. (d and d.room or (name .. "'s Room")) .. "  ·  " .. count .. " tuned in") or ((d and d.room or (name .. "'s Room")) .. " is open  ·  " .. count .. " tuned in"))
+        p.banner.btn:SetLabel(eb.tuned and "Tune out" or "Tune in")
+        p.banner.btn:SetStyle(eb.tuned and "ghost" or "primary")
+        p.banner:Show()
+    else
+        p.banner:Hide()
+    end
+    self:UpdateProgress()
+end
+
+function R:SongPosition()
+    local song = self:GetCurrentSong()
+    if not self.db.isPlaying or not song or not self.startedAt then return 0, tonumber(song and song.duration) or 0 end
+    local d = tonumber(song.duration) or 0
+    local e = GetTime() - self.startedAt
+    if d > 0 then e = math.min(e, d) end
+    return math.max(0, e), d
+end
+
+function R:UpdateProgress()
+    local e, d = self:SongPosition()
+    if PageShown("now") then
+        local p = self.mainFrame.pages.now
+        local w = p.bar:GetWidth() or 0
+        p.barFill:SetWidth(math.max(0.01, d > 0 and w * e / d or 0))
+        p.elapsed:SetText(Fmt(e))
+        p.total:SetText(d > 0 and Fmt(d) or "")
+        local eb = EB()
+        if eb and eb:JoiningIn() then p.sub:SetText(string.format("Joining in %ds, right in time with the set", math.ceil(eb:JoiningIn()))) end
+    end
+    if self.miniFrame and self.miniFrame:IsShown() then
+        local m = self.miniFrame
+        m.barFill:SetWidth(math.max(0.01, d > 0 and m:GetWidth() * e / d or 0))
+    end
+end
+
+-- ---------- Library ----------
+function R:GetFilteredSongs()
     local filter = string.lower(self.db.search or "")
     local view = self.db.libraryView or "all"
     local rows = {}
     for index, song in ipairs(self.songs or {}) do
         local title = string.lower(song.title or "")
-        local file = string.lower(song.file or "")
-        local category = string.lower(self.GetHiddenCategory and self:GetHiddenCategory(song) or "")
-        local matchesView = self.CanShowSongInLibrary and self:CanShowSongInLibrary(song, view)
-        if view == "favorites" then matchesView = matchesView and self:IsFavorite(index) end
-        local matchesFilter = filter == "" or string.find(title, filter, 1, true) or string.find(file, filter, 1, true)
-            or string.find(category, filter, 1, true)
-        if matchesView and matchesFilter then
-            rows[#rows + 1] = { index = index, song = song }
-        end
+        local matchesView = view ~= "favorites" or self:IsFavorite(index)
+        local matchesFilter = filter == "" or string.find(title, filter, 1, true)
+        if matchesView and matchesFilter then rows[#rows + 1] = { index = index, song = song } end
     end
     return rows
 end
 
-function GuildRadioFM:UpdateLibraryWindow()
-    if not self.libraryFrame or not self.db then return end
-    local frame = self.libraryFrame
-    local rows = self:GetFilteredSongs()
-    local visibleRows = GetVisibleRowCount(frame.list, 24, #frame.rows)
-    self.db.libraryScroll = ClampScrollOffset(self.db.libraryScroll, #rows, visibleRows)
-    frame.allButton:SetText((self.db.libraryView or "all") == "all" and "All *" or "All")
-    frame.favoriteButton:SetText(self.db.libraryView == "favorites" and "Liked *" or "Liked")
-    if self:IsSecretFrequencyUnlocked() then
-        frame.secretButton:Show()
-        frame.playLikedButton:ClearAllPoints()
-        frame.playLikedButton:SetPoint("LEFT", frame.secretButton, "RIGHT", 8, 0)
-        frame.secretButton:SetText(self.db.libraryView == "secret" and "Secret Frequency *" or "Secret Frequency")
-    else
-        frame.secretButton:Hide()
-        frame.playLikedButton:ClearAllPoints()
-        frame.playLikedButton:SetPoint("LEFT", frame.favoriteButton, "RIGHT", 8, 0)
-    end
-    if self.db.libraryView == "favorites" then
-        frame.unlikeButton:Show()
-    else
-        frame.unlikeButton:Hide()
-    end
-    local firstVisible = #rows == 0 and 0 or (self.db.libraryScroll or 0) + 1
-    local lastVisible = math.min(#rows, (self.db.libraryScroll or 0) + visibleRows)
-    frame.countText:SetText(firstVisible .. "-" .. lastVisible .. " of " .. #rows)
-    local selectedSong = self:GetSong(self.db.selectedLibrarySongIndex)
-    if selectedSong and self:IsLibrarySongVisible(self.db.selectedLibrarySongIndex) then
-        frame.selectedText:SetText("Selected: " .. tostring(selectedSong.title or selectedSong.file or "Untitled"))
-    else
-        frame.selectedText:SetText("Select a song")
-    end
+function R:BuildLibraryPage(p)
+    p.search = Search(p, 230, "Search songs", function(t) R.db.search = t; R.db.libraryScroll = 0; R:UpdateLibraryWindow() end)
+    p.search:SetPoint("TOPLEFT", 0, 0)
+    p.all = Pill(p, "All", function() R:SetLibraryView("all") end)
+    p.all:SetPoint("LEFT", p.search, "RIGHT", 10, 0)
+    p.liked = Pill(p, "Liked", function() R:SetLibraryView("favorites") end)
+    p.liked:SetPoint("LEFT", p.all, "RIGHT", 6, 0)
+    p.playLiked = TextButton(p, "Play liked", 86, 22, function() R:PlayFavoriteEntry(1) end, "ghost")
+    p.playLiked.label:SetFont(BODY_FONT, 11, "")
+    p.playLiked:SetPoint("LEFT", p.liked, "RIGHT", 6, 0)
+    p.count = Text(p, 11, C.faint, BODY_FONT, "RIGHT")
+    p.count:SetPoint("RIGHT", p, "TOPRIGHT", 0, -13)
 
-    for i, row in ipairs(frame.rows) do
-        local item = rows[i + (self.db.libraryScroll or 0)]
-        if item and i <= visibleRows then
-            row.songIndex = item.index
-            row.text:SetText((self:IsFavorite(item.index) and "* " or "") .. item.index .. ". " .. (item.song.title or item.song.file or "Untitled"))
-            row:Show()
-            if item.index == self.db.selectedLibrarySongIndex then
-                row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-                row:SetBackdropColor(0.18, 0.28, 0.34, 0.42)
-            elseif item.index == self.db.currentIndex then
-                row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-                row:SetBackdropColor(HILITE[1], HILITE[2], HILITE[3], HILITE[4])
-            else
-                row:SetBackdrop(nil)
-            end
-        else
-            row.songIndex = nil
-            row:Hide()
-        end
-    end
-
-    if #rows == 0 then
-        frame.rows[1]:Show()
-        frame.rows[1].songIndex = nil
-        if self.db.libraryView == "secret" then
-            frame.rows[1].text:SetText("No Secret Frequency songs are installed.")
-        else
-            frame.rows[1].text:SetText(self:GetSongCount() == 0 and "No songs listed in SongList.lua." or "No songs match this view.")
-        end
-        frame.rows[1]:SetBackdrop(nil)
+    local holder = CreateFrame("Frame", nil, p)
+    holder:SetPoint("TOPLEFT", 0, -38)
+    holder:SetPoint("BOTTOMRIGHT", 0, 0)
+    Fill(holder, C.surface)
+    Outline(holder, C.line)
+    p.list = List(holder, 28, 10, function(row)
+        row.num = Text(row, 11, C.faint, BODY_FONT, "RIGHT")
+        row.num:SetPoint("LEFT", 6, 0); row.num:SetWidth(22)
+        row.title = Text(row, 13, C.text)
+        row.title:SetPoint("LEFT", 38, 0)
+        row.dur = Text(row, 11, C.faint, BODY_FONT, "RIGHT")
+        row.req = IconButton(row, "live", 14, function(b) EB():Request(EB().KeyOf(b:GetParent().item.song)) end,
+            function() local eb = EB(); return eb.live and "Add to your Request Line" or "Request in the room" end, 26)
+        row.add = IconButton(row, "plus", 12, function(b) R:AddSongToSelectedPlaylist(b:GetParent().item.index) end,
+            function() local pl = R:GetSelectedPlaylist(); return pl and not pl.runtime and ("Add to " .. pl.name) or "Make a playlist first" end, 26)
+        row.like = IconButton(row, "heartline", 13, function(b) R:ToggleFavorite(b:GetParent().item.index) end, "Like", 26)
+        row.like:SetPoint("RIGHT", -6, 0)
+        row.add:SetPoint("RIGHT", row.like, "LEFT", 0, 0)
+        row.req:SetPoint("RIGHT", row.add, "LEFT", 0, 0)
+        row.dur:SetPoint("RIGHT", row.req, "LEFT", -6, 0)
+        row.title:SetPoint("RIGHT", row.dur, "LEFT", -8, 0)
+        for _, b in ipairs({ row.req, row.add, row.like }) do Wheel(b, row.wheel) end
+        row:SetScript("OnClick", function(selfRow, mouse)
+            if not selfRow.item then return end
+            if mouse == "RightButton" then R:AddSongToSelectedPlaylist(selfRow.item.index) else R:PlaySong(selfRow.item.index) end
+        end)
+        Tip(row, nil)
+    end, function(row, item)
+        local current = item.index == R.db.currentIndex and R.db.isPlaying
+        row.num:SetText(item.index)
+        row.title:SetText(item.song.title or "Untitled")
+        SetColor(row.title, current and C.acc or C.text)
+        row.dur:SetText(item.song.duration and Fmt(item.song.duration) or "")
+        local liked = R:IsFavorite(item.index)
+        row.like.icon:SetIcon(liked and "heart" or "heartline")
+        row.like:SetActive(liked)
+        local eb = EB()
+        local someoneLive = eb and (eb.live or eb.tuned or eb:CurrentDJ())
+        if someoneLive then
+            row.req:Show()
+            row.req:SetActive(eb:Requested(eb.KeyOf(item.song)))
+        else row.req:Hide() end
+        row.add:Show(); row.like:Show()
+        if current then row.mark:Show() end
+    end, function() return R:GetFilteredSongs() end, "libraryScroll")
+    p.list:SetPoint("TOPLEFT", 1, -1)
+    p.list:SetPoint("BOTTOMRIGHT", -1, 1)
+    p.list.empty = function(row)
+        row.num:SetText(""); row.dur:SetText(""); row.req:Hide(); row.add:Hide(); row.like:Hide()
+        row.title:SetText(R:GetSongCount() == 0 and "No songs yet. See Settings for how to add them." or "Nothing matches.")
+        SetColor(row.title, C.faint)
     end
 end
 
-function GuildRadioFM:ToggleLibraryWindow()
-    self:CreateLibraryWindow()
-    if self.libraryFrame:IsShown() then self.libraryFrame:Hide() else self.libraryFrame:Show() self:UpdateLibraryWindow() end
+function R:UpdateLibraryWindow()
+    if not PageShown("library") then return end
+    local p = self.mainFrame.pages.library
+    local view = self.db.libraryView or "all"
+    p.all:SetOn(view == "all")
+    p.liked:SetOn(view == "favorites")
+    p.list:Refresh()
+    p.count:SetText(p.list.count .. (p.list.count == 1 and " song" or " songs"))
 end
 
-function GuildRadioFM:CreatePlaylistWindow()
-    if self.playlistFrame then return end
+-- ---------- Playlists ----------
+function R:BuildPlaylistPage(p)
+    local left = CreateFrame("Frame", nil, p)
+    left:SetPoint("TOPLEFT", 0, 0)
+    left:SetPoint("BOTTOMLEFT", 0, 0)
+    left:SetWidth(200)
+    Fill(left, C.surface)
+    Outline(left, C.line)
+    p.lists = List(left, 30, 9, function(row)
+        row.name = Text(row, 13, C.text)
+        row.name:SetPoint("LEFT", 12, 0)
+        row.n = Text(row, 11, C.faint, BODY_FONT, "RIGHT")
+        row.n:SetPoint("RIGHT", -10, 0)
+        row.name:SetPoint("RIGHT", row.n, "LEFT", -6, 0)
+        row:SetScript("OnClick", function(selfRow) if selfRow.item then R:SelectPlaylist(selfRow.item.i) end end)
+        Tip(row, nil)
+    end, function(row, item)
+        row.name:SetText(item.pl.name)
+        row.n:SetText(#(item.pl.songs or {}))
+        local sel = item.i == R.db.selectedPlaylistIndex
+        row.selected = sel
+        SetColor(row.name, sel and C.text or C.dim)
+        if sel then row.mark:Show() end
+    end, function()
+        local out = {}
+        for i, pl in ipairs(R:GetAllPlaylists()) do out[i] = { i = i, pl = pl } end
+        return out
+    end, "playlistScroll")
+    p.lists:SetPoint("TOPLEFT", 1, -1)
+    p.lists:SetPoint("BOTTOMRIGHT", -1, 40)
+    p.lists.empty = function(row) row.name:SetText("No playlists yet"); SetColor(row.name, C.faint); row.n:SetText("") end
+    p.newName = Search(left, 150, "New playlist", nil)
+    p.newName:SetPoint("BOTTOMLEFT", 6, 7)
+    p.newName:SetScript("OnEnterPressed", function(selfB) R:CreatePlaylist(selfB:GetText()); selfB:SetText(""); selfB:ClearFocus() end)
+    p.newBtn = IconButton(left, "plus", 13, function() R:CreatePlaylist(p.newName:GetText()); p.newName:SetText("") end, "Create playlist", 30)
+    p.newBtn:SetPoint("LEFT", p.newName, "RIGHT", 4, 0)
 
-    local frame = MakeWindow("playlistFrame", "GuildRadioFMPlaylistFrame", "Playlists", 560, 520)
-    frame.nameBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-    frame.nameBox:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -44)
-    frame.nameBox:SetSize(180, 24)
-    frame.nameBox:SetAutoFocus(false)
+    local right = CreateFrame("Frame", nil, p)
+    right:SetPoint("TOPLEFT", left, "TOPRIGHT", 14, 0)
+    right:SetPoint("BOTTOMRIGHT", 0, 0)
+    p.head = Text(right, 18, C.text, TITLE_FONT)
+    p.head:SetPoint("TOPLEFT", 2, -4)
+    p.headSub = Text(right, 11, C.faint)
+    p.headSub:SetPoint("TOPLEFT", p.head, "BOTTOMLEFT", 0, -5)
+    p.del = TextButton(right, "Delete", 62, 24, function() R:DeleteSelectedPlaylist() end, "ghost")
+    p.del:SetPoint("TOPRIGHT", 0, 0)
+    p.clear = TextButton(right, "Clear", 56, 24, function() R:ClearSelectedPlaylist() end, "ghost")
+    p.clear:SetPoint("RIGHT", p.del, "LEFT", -6, 0)
+    p.playAll = TextButton(right, "Play", 64, 24, function() R:PlayPlaylistEntry(R.db.playlistEntryIndex or 1) end, "primary")
+    p.playAll:SetPoint("RIGHT", p.clear, "LEFT", -6, 0)
+    p.addBtn = TextButton(right, "Add songs", 78, 24, function() p.adding = not p.adding; R.db.pickScroll = 0; R:UpdatePlaylistWindow() end, "ghost")
+    p.addBtn:SetPoint("RIGHT", p.playAll, "LEFT", -6, 0)
+    p.head:SetPoint("RIGHT", p.addBtn, "LEFT", -8, 0)
+    p.headSub:SetPoint("RIGHT", p.addBtn, "LEFT", -8, 0)
 
-    frame.newButton = MakeButton(frame, "New", 58, 24, function()
-        GuildRadioFM:CreatePlaylist(frame.nameBox:GetText())
-        frame.nameBox:SetText("")
+    -- click the playlist name to rename it
+    p.rename = CreateFrame("EditBox", nil, right)
+    p.rename:SetFont(TITLE_FONT, 16, "")
+    p.rename:SetTextColor(C.text[1], C.text[2], C.text[3])
+    p.rename:SetAutoFocus(false)
+    p.rename:SetMaxLetters(40)
+    p.rename:SetSize(170, 24)
+    p.rename:SetPoint("TOPLEFT", 0, -2)
+    Fill(p.rename, C.raised)
+    p.rename:Hide()
+    p.rename:SetScript("OnEnterPressed", function(selfB)
+        local pl = R:GetSelectedPlaylist()
+        local name = strtrim and strtrim(selfB:GetText() or "") or (selfB:GetText() or "")
+        if pl and not pl.runtime and name ~= "" then pl.name = name end
+        selfB:ClearFocus(); selfB:Hide(); R:RefreshAll()
     end)
-    frame.newButton:SetPoint("LEFT", frame.nameBox, "RIGHT", 10, 0)
-
-    frame.deleteButton = MakeButton(frame, "Delete", 70, 24, function() GuildRadioFM:DeleteSelectedPlaylist() end)
-    frame.deleteButton:SetPoint("LEFT", frame.newButton, "RIGHT", 8, 0)
-
-    frame.playButton = MakeButton(frame, "Play", 58, 24, function() GuildRadioFM:PlayPlaylistEntry(GuildRadioFM.db.playlistEntryIndex) end)
-    frame.playButton:SetPoint("LEFT", frame.deleteButton, "RIGHT", 8, 0)
-
-    frame.clearButton = MakeButton(frame, "Clear", 62, 24, function() GuildRadioFM:ClearSelectedPlaylist() end)
-    frame.clearButton:SetPoint("TOPLEFT", frame.nameBox, "BOTTOMLEFT", 0, -8)
-
-    frame.upButton = MakeButton(frame, "Up", 44, 24, function() GuildRadioFM:MovePlaylistSong(GuildRadioFM.db.playlistEntryIndex, -1) end)
-    frame.upButton:SetPoint("LEFT", frame.clearButton, "RIGHT", 8, 0)
-
-    frame.downButton = MakeButton(frame, "Down", 58, 24, function() GuildRadioFM:MovePlaylistSong(GuildRadioFM.db.playlistEntryIndex, 1) end)
-    frame.downButton:SetPoint("LEFT", frame.upButton, "RIGHT", 8, 0)
-
-    frame.statusText = MakeText(frame, "GameFontDisableSmall", "RIGHT")
-    frame.statusText:SetPoint("LEFT", frame.downButton, "RIGHT", 8, 0)
-    frame.statusText:SetPoint("RIGHT", frame, "RIGHT", -18, -76)
-
-    frame.playlistList = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.playlistList:SetPoint("TOPLEFT", frame.clearButton, "BOTTOMLEFT", -2, -12)
-    frame.playlistList:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 18)
-    frame.playlistList:SetWidth(190)
-    ApplyInset(frame.playlistList)
-    frame.playlistRows = {}
-    AddMouseWheelScroll(frame.playlistList, function()
-        return GuildRadioFM.db, "playlistScroll", GuildRadioFM:GetPlaylistCount(), GetVisibleRowCount(frame.playlistList, 26, #frame.playlistRows)
-    end, function() GuildRadioFM:UpdatePlaylistWindow() end)
-
-    for i = 1, 18 do
-        local row = CreateFrame("Button", nil, frame.playlistList, "BackdropTemplate")
-        row:SetHeight(24)
-        row:SetPoint("TOPLEFT", frame.playlistList, "TOPLEFT", 4, -4 - ((i - 1) * 26))
-        row:SetPoint("TOPRIGHT", frame.playlistList, "TOPRIGHT", -4, -4 - ((i - 1) * 26))
-        row.text = MakeText(row, "GameFontNormalSmall")
-        row.text:SetPoint("LEFT", row, "LEFT", 6, 0)
-        row.text:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-        row:SetScript("OnMouseDown", function(button) RaiseWindow(GetOwningWindow(button)) end)
-        AddMouseWheelScroll(row, function()
-            return GuildRadioFM.db, "playlistScroll", GuildRadioFM:GetPlaylistCount(), GetVisibleRowCount(frame.playlistList, 26, #frame.playlistRows)
-        end, function() GuildRadioFM:UpdatePlaylistWindow() end)
-        row:SetScript("OnClick", function(button)
-            if button.playlistIndex then GuildRadioFM:SelectPlaylist(button.playlistIndex) end
-        end)
-        frame.playlistRows[i] = row
+    p.rename:SetScript("OnEscapePressed", function(selfB) selfB:ClearFocus(); selfB:Hide() end)
+    p.headHit = CreateFrame("Button", nil, right)
+    p.headHit:SetPoint("TOPLEFT", p.head, "TOPLEFT")
+    p.headHit:SetPoint("BOTTOMRIGHT", p.head, "BOTTOMRIGHT")
+    function p.headHit:Hover(h)
+        local pl = R:GetSelectedPlaylist()
+        if pl and not pl.runtime then SetColor(p.head, h and C.acc or C.text) end
     end
-
-    frame.songList = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.songList:SetPoint("TOPLEFT", frame.playlistList, "TOPRIGHT", 12, 0)
-    frame.songList:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18)
-    ApplyInset(frame.songList)
-    frame.songRows = {}
-    AddMouseWheelScroll(frame.songList, function()
-        local playlist = GuildRadioFM:GetSelectedPlaylist()
-        local entries = playlist and playlist.songs or {}
-        return GuildRadioFM.db, "playlistSongScroll", #entries, GetVisibleRowCount(frame.songList, 26, #frame.songRows)
-    end, function() GuildRadioFM:UpdatePlaylistWindow() end)
-
-    for i = 1, 24 do
-        local row = CreateFrame("Button", nil, frame.songList, "BackdropTemplate")
-        row:SetHeight(24)
-        row:SetPoint("TOPLEFT", frame.songList, "TOPLEFT", 4, -4 - ((i - 1) * 26))
-        row:SetPoint("TOPRIGHT", frame.songList, "TOPRIGHT", -4, -4 - ((i - 1) * 26))
-        row.text = MakeText(row, "GameFontNormalSmall")
-        row.text:SetPoint("LEFT", row, "LEFT", 6, 0)
-        row.text:SetPoint("RIGHT", row, "RIGHT", -74, 0)
-        row:SetScript("OnMouseDown", function(button) RaiseWindow(GetOwningWindow(button)) end)
-        row.removeButton = MakeButton(row, "Remove", 64, 20, function(button)
-            if button:GetParent().entryIndex then GuildRadioFM:RemovePlaylistSong(button:GetParent().entryIndex) end
-        end)
-        row.removeButton:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-        AddMouseWheelScroll(row, function()
-            local playlist = GuildRadioFM:GetSelectedPlaylist()
-            local entries = playlist and playlist.songs or {}
-            return GuildRadioFM.db, "playlistSongScroll", #entries, GetVisibleRowCount(frame.songList, 26, #frame.songRows)
-        end, function() GuildRadioFM:UpdatePlaylistWindow() end)
-        row:SetScript("OnClick", function(button)
-            if button.entryIndex then
-                GuildRadioFM.db.playlistEntryIndex = button.entryIndex
-                GuildRadioFM:UpdatePlaylistWindow()
-            end
-        end)
-        row:SetScript("OnDoubleClick", function(button)
-            if button.entryIndex then
-                GuildRadioFM.db.playlistEntryIndex = button.entryIndex
-                GuildRadioFM:PlayPlaylistEntry(button.entryIndex)
-            end
-        end)
-        frame.songRows[i] = row
-    end
-
-    self:UpdatePlaylistWindow()
-end
-
-function GuildRadioFM:UpdatePlaylistWindow()
-    if not self.playlistFrame or not self.db then return end
-    local frame = self.playlistFrame
-    local playlists = self:GetAllPlaylists()
-    local selected = self.db.selectedPlaylistIndex or 1
-    local visiblePlaylists = GetVisibleRowCount(frame.playlistList, 26, #frame.playlistRows)
-    local visibleSongs = GetVisibleRowCount(frame.songList, 26, #frame.songRows)
-    self.db.playlistScroll = ClampScrollOffset(self.db.playlistScroll, #playlists, visiblePlaylists)
-    local playlistFirst = #playlists == 0 and 0 or (self.db.playlistScroll or 0) + 1
-    local playlistLast = math.min(#playlists, (self.db.playlistScroll or 0) + visiblePlaylists)
-
-    for i, row in ipairs(frame.playlistRows) do
-        local playlistIndex = i + (self.db.playlistScroll or 0)
-        local playlist = playlists[playlistIndex]
-        if playlist and i <= visiblePlaylists then
-            row.playlistIndex = playlistIndex
-            row.text:SetText(playlist.name .. " (" .. tostring(#(playlist.songs or {})) .. ")" .. (playlist.runtime and " *" or ""))
-            row:Show()
-            if playlistIndex == selected then
-                row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-                row:SetBackdropColor(HILITE[1], HILITE[2], HILITE[3], HILITE[4])
-            else
-                row:SetBackdrop(nil)
-            end
-        else
-            row.playlistIndex = nil
-            row:Hide()
-        end
-    end
-
-    if #playlists == 0 then
-        frame.playlistRows[1]:Show()
-        frame.playlistRows[1].playlistIndex = nil
-        frame.playlistRows[1].text:SetText("No playlists yet")
-        frame.playlistRows[1]:SetBackdrop(nil)
-    end
-
-    local playlist = self:GetSelectedPlaylist()
-    local entries = playlist and playlist.songs or {}
-    self.db.playlistSongScroll = ClampScrollOffset(self.db.playlistSongScroll, #entries, visibleSongs)
-    local songFirst = #entries == 0 and 0 or (self.db.playlistSongScroll or 0) + 1
-    local songLast = math.min(#entries, (self.db.playlistSongScroll or 0) + visibleSongs)
-    local playlistName = playlist and playlist.name or "No playlist"
-    frame.statusText:SetText(playlistName .. " | Lists " .. playlistFirst .. "-" .. playlistLast .. " of " .. #playlists .. " | Songs " .. songFirst .. "-" .. songLast .. " of " .. #entries)
-    for i, row in ipairs(frame.songRows) do
-        local entryIndex = i + (self.db.playlistSongScroll or 0)
-        local songIndex = entries[entryIndex]
-        local song = songIndex and self:GetSong(songIndex)
-        if song and i <= visibleSongs then
-            row.entryIndex = entryIndex
-            row.text:SetText(entryIndex .. ". " .. (song.title or ("Song " .. tostring(songIndex))))
-            row:Show()
-            if playlist and playlist.runtime then
-                row.removeButton:Hide()
-            else
-                row.removeButton:Show()
-            end
-            if entryIndex == self.db.playlistEntryIndex then
-                row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-                row:SetBackdropColor(HILITE[1], HILITE[2], HILITE[3], HILITE[4])
-            else
-                row:SetBackdrop(nil)
-            end
-        else
-            row.entryIndex = nil
-            row:Hide()
-        end
-    end
-
-    if #entries == 0 then
-        frame.songRows[1]:Show()
-        frame.songRows[1].entryIndex = nil
-        frame.songRows[1].text:SetText(playlist and "Right-click songs in Library to add them here." or "Create a playlist first.")
-        frame.songRows[1].removeButton:Hide()
-        frame.songRows[1]:SetBackdrop(nil)
-    else
-        for _, row in ipairs(frame.songRows) do
-            if row.entryIndex then
-                if playlist and playlist.runtime then row.removeButton:Hide() else row.removeButton:Show() end
-            end
-        end
-    end
-end
-
-function GuildRadioFM:TogglePlaylistWindow()
-    self:CreatePlaylistWindow()
-    if self.playlistFrame:IsShown() then self.playlistFrame:Hide() else self.playlistFrame:Show() self:UpdatePlaylistWindow() end
-end
-
-function GuildRadioFM:CreateQueueWindow()
-    if self.queueFrame then return end
-
-    local frame = MakeWindow("queueFrame", "GuildRadioFMQueueFrame", "Current Queue", 520, 420)
-    frame.statusText = MakeText(frame, "GameFontNormalSmall")
-    frame.statusText:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -46)
-    frame.statusText:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -46)
-    frame.statusText:SetTextColor(0.78, 0.72, 0.6)
-
-    frame.clearButton = MakeButton(frame, "Clear Queue", 100, 24, function() GuildRadioFM:ClearQueue() end)
-    frame.clearButton:SetPoint("TOPLEFT", frame.statusText, "BOTTOMLEFT", 0, -12)
-    frame.nextButton = MakeButton(frame, "Play Next Preview", 124, 24, function() GuildRadioFM:PlayNextInQueue() end)
-    frame.nextButton:SetPoint("LEFT", frame.clearButton, "RIGHT", 8, 0)
-    frame.nextButton:Disable()
-    AddTooltip(frame.nextButton, "Queue Preview", "Queue management is available. Automatic queue playback is under development.")
-    AddTooltip(frame.clearButton, "Clear Queue", "Removes every song from the current queue.")
-
-    frame.list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.list:SetPoint("TOPLEFT", frame.clearButton, "BOTTOMLEFT", -2, -12)
-    frame.list:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18)
-    ApplyInset(frame.list)
-    frame.rows = {}
-
-    for i = 1, 14 do
-        local row = CreateFrame("Frame", nil, frame.list, "BackdropTemplate")
-        row:SetHeight(24)
-        row:SetPoint("TOPLEFT", frame.list, "TOPLEFT", 4, -4 - ((i - 1) * 26))
-        row:SetPoint("TOPRIGHT", frame.list, "TOPRIGHT", -4, -4 - ((i - 1) * 26))
-        row.text = MakeText(row, "GameFontNormalSmall")
-        row.text:SetPoint("LEFT", row, "LEFT", 6, 0)
-        row.text:SetPoint("RIGHT", row, "RIGHT", -74, 0)
-        row.removeButton = MakeButton(row, "Remove", 64, 20, function(button)
-            local parent = button:GetParent()
-            if parent and parent.queueIndex then GuildRadioFM:RemoveFromQueue(parent.queueIndex) end
-        end)
-        row.removeButton:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-        frame.rows[i] = row
-    end
-
-    self:UpdateQueueWindow()
-end
-
-function GuildRadioFM:UpdateQueueWindow()
-    if not self.queueFrame then return end
-    local frame = self.queueFrame
-    local queue = self.GetQueue and self:GetQueue() or {}
-    frame.statusText:SetText("Songs queued: " .. tostring(#queue) .. " | Automatic queue playback under development.")
-    if #queue == 0 then
-        frame.clearButton:Disable()
-        frame.nextButton:Disable()
-    else
-        frame.clearButton:Enable()
-        frame.nextButton:Disable()
-    end
-
-    for i, row in ipairs(frame.rows) do
-        local entry = queue[i]
-        if entry then
-            row.queueIndex = i
-            row.text:SetText(i .. ". " .. tostring(entry.title or "Untitled") .. " - " .. tostring(entry.artist or "GuildRadioFM"))
-            row.removeButton:Show()
-            row:Show()
-        else
-            row.queueIndex = nil
-            row:Hide()
-        end
-    end
-
-    if #queue == 0 then
-        frame.rows[1]:Show()
-        frame.rows[1].queueIndex = nil
-        frame.rows[1].text:SetText("Queue is empty.")
-        frame.rows[1].removeButton:Hide()
-    end
-end
-
-function GuildRadioFM:ToggleQueueWindow(show)
-    self:CreateQueueWindow()
-    self:UpdateQueueWindow()
-    if show == true then
-        self.queueFrame:Show()
-    elseif show == false then
-        self.queueFrame:Hide()
-    elseif self.queueFrame:IsShown() then
-        self.queueFrame:Hide()
-    else
-        self.queueFrame:Show()
-    end
-end
-
-function GuildRadioFM:CreateSharingWindow()
-    if self.sharingFrame then return end
-
-    local frame = MakeWindow("sharingFrame", "GuildRadioFMSharingFrame", "Metadata Sharing", 540, 420)
-    frame.statusText = MakeText(frame, "GameFontNormalSmall")
-    frame.statusText:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -46)
-    frame.statusText:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -46)
-    frame.statusText:SetTextColor(0.78, 0.72, 0.6)
-
-    frame.shareButton = MakeButton(frame, "Share Metadata", 122, 24, function() GuildRadioFM:ShareCurrentSong() end)
-    frame.shareButton:SetPoint("TOPLEFT", frame.statusText, "BOTTOMLEFT", 0, -12)
-    AddTooltip(frame.shareButton, "Metadata Sharing", "Sends song metadata only. It does not transmit audio or sync playback.")
-    frame.requestButton = MakeButton(frame, "Request Metadata", 132, 24, function() GuildRadioFM:RequestCurrentSong() end)
-    frame.requestButton:SetPoint("LEFT", frame.shareButton, "RIGHT", 8, 0)
-    AddTooltip(frame.requestButton, "Metadata Request", "Requests song metadata only. MP3 files are never transferred by the addon.")
-    frame.clearButton = MakeButton(frame, "Clear", 70, 24, function() GuildRadioFM:ClearSharingInbox() end)
-    frame.clearButton:SetPoint("LEFT", frame.requestButton, "RIGHT", 8, 0)
-
-    frame.list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.list:SetPoint("TOPLEFT", frame.shareButton, "BOTTOMLEFT", -2, -12)
-    frame.list:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18)
-    ApplyInset(frame.list)
-    frame.rows = {}
-
-    for i = 1, 12 do
-        local row = CreateFrame("Frame", nil, frame.list, "BackdropTemplate")
-        row:SetHeight(26)
-        row:SetPoint("TOPLEFT", frame.list, "TOPLEFT", 4, -4 - ((i - 1) * 28))
-        row:SetPoint("TOPRIGHT", frame.list, "TOPRIGHT", -4, -4 - ((i - 1) * 28))
-        row.text = MakeText(row, "GameFontNormalSmall")
-        row.text:SetPoint("LEFT", row, "LEFT", 6, 0)
-        row.text:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-        frame.rows[i] = row
-    end
-
-    self:UpdateSharingWindow()
-end
-
-function GuildRadioFM:UpdateSharingWindow()
-    if not self.sharingFrame then return end
-    local frame = self.sharingFrame
-    local inbox = self.GetSharingInbox and self:GetSharingInbox() or {}
-    local channel = self.GetSharingChannel and self:GetSharingChannel() or nil
-    frame.statusText:SetText("Metadata only | Channel: " .. tostring(channel or "none") .. "   Inbox: " .. tostring(#inbox))
-
-    for i, row in ipairs(frame.rows) do
-        local entry = inbox[i]
-        if entry then
-            local kind = entry.kind == "REQ" and "Request" or "Now Playing"
-            row.text:SetText(i .. ". " .. kind .. " from " .. tostring(entry.sender or "Unknown") .. ": " .. tostring(entry.title or "Untitled") .. " - " .. tostring(entry.artist or "GuildRadioFM"))
-            row:Show()
-        else
-            row:Hide()
-        end
-    end
-
-    if #inbox == 0 then
-        frame.rows[1]:Show()
-        frame.rows[1].text:SetText("No shared metadata or requests yet.")
-    end
-end
-
-function GuildRadioFM:ToggleSharingWindow(show)
-    self:CreateSharingWindow()
-    self:UpdateSharingWindow()
-    if show == true then
-        self.sharingFrame:Show()
-    elseif show == false then
-        self.sharingFrame:Hide()
-    elseif self.sharingFrame:IsShown() then
-        self.sharingFrame:Hide()
-    else
-        self.sharingFrame:Show()
-    end
-end
-
-function GuildRadioFM:CreateSettingsWindow()
-    if self.settingsFrame then return end
-
-    local frame = MakeWindow("settingsFrame", "GuildRadioFMSettingsFrame", "Settings", 430, 360)
-    frame.info = MakeText(frame, "GameFontNormalSmall")
-    frame.info:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -46)
-    frame.info:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -46)
-    frame.info:SetText("Local-only player. Songs must be packaged inside GuildRadioFM\\Songs before WoW starts. Addons cannot upload songs, stream internet audio, read arbitrary files, or seek inside MP3s. Volume uses the global Dialog channel.")
-
-    frame.volumeText = MakeText(frame, "GameFontNormal")
-    frame.volumeText:SetPoint("TOPLEFT", frame.info, "BOTTOMLEFT", 0, -24)
-
-    frame.volumeSlider = CreateFrame("Slider", nil, frame, "OptionsSliderTemplate")
-    frame.volumeSlider:SetPoint("TOPLEFT", frame.volumeText, "BOTTOMLEFT", 0, -12)
-    frame.volumeSlider:SetWidth(240)
-    frame.volumeSlider:SetMinMaxValues(0, 100)
-    frame.volumeSlider:SetValueStep(1)
-    frame.volumeSlider:SetObeyStepOnDrag(true)
-    frame.volumeSlider:SetScript("OnValueChanged", function(_, value)
-        if GuildRadioFM.suppressSettingsVolumeUpdate then return end
-        GuildRadioFM:SetVolume(math.floor(value + 0.5))
+    Tip(p.headHit, function() local pl = R:GetSelectedPlaylist(); return pl and not pl.runtime and "Click to rename" or nil end)
+    p.headHit:SetScript("OnClick", function()
+        local pl = R:GetSelectedPlaylist()
+        if not pl or pl.runtime then return end
+        p.rename:SetText(pl.name or "")
+        p.rename:Show(); p.rename:SetFocus(); p.rename:HighlightText()
     end)
-    frame.volumeSlider.Low:SetText("0")
-    frame.volumeSlider.High:SetText("100")
-    frame.volumeSlider.Text:SetText("")
 
-    frame.shuffleButton = MakeToggleButton(frame, "Shuffle", function() GuildRadioFM:ToggleShuffle() end)
-    frame.shuffleButton:SetPoint("TOPLEFT", frame.volumeSlider, "BOTTOMLEFT", 0, -34)
-    frame.repeatButton = MakeToggleButton(frame, "Repeat", function() GuildRadioFM:ToggleRepeat() end)
-    frame.repeatButton:SetPoint("LEFT", frame.shuffleButton, "RIGHT", 8, 0)
-    frame.autoNextButton = MakeToggleButton(frame, "Auto-next", function() GuildRadioFM:ToggleAutoNext() end)
-    frame.autoNextButton:SetPoint("LEFT", frame.repeatButton, "RIGHT", 8, 0)
-    frame.muteButton = MakeButton(frame, "Mute", 70, 24, function() GuildRadioFM:ToggleMute() end)
-    frame.muteButton:SetPoint("TOPLEFT", frame.shuffleButton, "BOTTOMLEFT", 0, -12)
+    -- "Add songs": the whole library with a + on each row, adds straight to this playlist
+    local pick = CreateFrame("Frame", nil, right)
+    p.pick = pick
+    pick:SetPoint("TOPLEFT", 0, -46)
+    pick:SetPoint("BOTTOMRIGHT", 0, 0)
+    pick:SetFrameLevel(right:GetFrameLevel() + 5)
+    Fill(pick, C.surface)
+    Outline(pick, C.line)
+    pick.search = Search(pick, 200, "Search songs", function() R.db.pickScroll = 0; R:UpdatePlaylistWindow() end)
+    pick.search:SetPoint("TOPLEFT", 6, -6)
+    pick.hint = Text(pick, 11, C.faint, BODY_FONT, "RIGHT")
+    pick.hint:SetPoint("TOPRIGHT", -10, -12)
+    pick.hint:SetText("+ adds to this playlist")
+    local pickBox = CreateFrame("Frame", nil, pick)
+    pickBox:SetPoint("TOPLEFT", 1, -38)
+    pickBox:SetPoint("BOTTOMRIGHT", -1, 1)
+    p.pickList = List(pickBox, 26, 9, function(row)
+        row.title = Text(row, 13, C.text)
+        row.title:SetPoint("LEFT", 12, 0)
+        row.add = IconButton(row, "plus", 12, function(b)
+            local it = b:GetParent().item
+            if it then R:AddSongToSelectedPlaylist(it.index) end
+        end, "Add to this playlist", 26)
+        row.add:SetPoint("RIGHT", -6, 0)
+        row.state = Text(row, 11, C.faint, BODY_FONT, "RIGHT")
+        row.state:SetPoint("RIGHT", row.add, "LEFT", -4, 0)
+        row.title:SetPoint("RIGHT", row.state, "LEFT", -6, 0)
+        Wheel(row.add, row.wheel)
+        row:SetScript("OnClick", function(selfRow) if selfRow.item then R:AddSongToSelectedPlaylist(selfRow.item.index) end end)
+        Tip(row, nil)
+    end, function(row, item)
+        row.title:SetText(item.song.title or "Untitled")
+        local n = 0
+        local pl = R:GetSelectedPlaylist()
+        for _, idx in ipairs(pl and pl.songs or {}) do if idx == item.index then n = n + 1 end end
+        row.state:SetText(n > 0 and ("in playlist" .. (n > 1 and (" x" .. n) or "")) or "")
+        SetColor(row.title, n > 0 and C.dim or C.text)
+    end, function()
+        local needle = string.lower(pick.search:GetText() or "")
+        local out = {}
+        for i, song in ipairs(R.songs or {}) do
+            if needle == "" or string.find(string.lower(song.title or ""), needle, 1, true) then out[#out + 1] = { index = i, song = song } end
+        end
+        return out
+    end, "pickScroll")
+    p.pickList:SetPoint("TOPLEFT", 0, 0)
+    p.pickList:SetPoint("BOTTOMRIGHT", 0, 0)
+    pick:Hide()
 
-    frame.addSongsButton = MakeButton(frame, "Add Songs Help", 130, 24, function() GuildRadioFM:ToggleAddSongsWindow() end)
-    frame.addSongsButton:SetPoint("LEFT", frame.muteButton, "RIGHT", 8, 0)
-
-    self:UpdateSettingsWindow()
-end
-
-function GuildRadioFM:UpdateSettingsWindow()
-    if not self.settingsFrame or not self.db then return end
-    local frame = self.settingsFrame
-    frame.volumeText:SetText("Dialog Volume: " .. tostring(self.db.muted and 0 or self.db.volume) .. "%")
-    self.suppressSettingsVolumeUpdate = true
-    frame.volumeSlider:SetValue(self.db.muted and 0 or self.db.volume)
-    self.suppressSettingsVolumeUpdate = false
-    frame.shuffleButton:SetText("Shuffle " .. (self.db.shuffle and "On" or "Off"))
-    frame.repeatButton:SetText("Repeat " .. (self.db.repeatSong and "On" or "Off"))
-    frame.autoNextButton:SetText("Auto " .. (self.db.autoNext and "On" or "Off"))
-    frame.muteButton:SetText(self.db.muted and "Unmute" or "Mute")
-end
-
-function GuildRadioFM:ToggleSettingsWindow()
-    self:CreateSettingsWindow()
-    if self.settingsFrame:IsShown() then self.settingsFrame:Hide() else self.settingsFrame:Show() self:UpdateSettingsWindow() end
-end
-
-function GuildRadioFM:CreateAddSongsWindow()
-    if self.addSongsFrame then return end
-
-    local frame = MakeWindow("addSongsFrame", "GuildRadioFMAddSongsFrame", "Add Songs", 560, 420)
-    frame.body = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.body:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -46)
-    frame.body:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 44)
-    ApplyInset(frame.body)
-
-    frame.instructions = MakeText(frame.body, "GameFontNormalSmall")
-    frame.instructions:SetPoint("TOPLEFT", frame.body, "TOPLEFT", 10, -10)
-    frame.instructions:SetPoint("TOPRIGHT", frame.body, "TOPRIGHT", -10, -10)
-    frame.instructions:SetSpacing(4)
-    frame.instructions:SetText(
-        "GuildRadioFM cannot upload songs from inside WoW. Add songs before launching or reloading the game.\n\n" ..
-        "1. Copy MP3 files into:\n" ..
-        "World of Warcraft\\_retail_\\Interface\\AddOns\\GuildRadioFM\\Songs\\\n\n" ..
-        "2. Open SongList.lua in the GuildRadioFM folder.\n\n" ..
-        "3. Add one line inside GuildRadioFMSongList for each song:\n" ..
-        "{ id = \"guildradiofm:my-song\", title = \"My Song\", file = \"Interface\\\\AddOns\\\\GuildRadioFM\\\\Songs\\\\My Song.mp3\" },\n\n" ..
-        "4. Save SongList.lua, then fully restart WoW or type /reload.\n\n" ..
-        "Rules: file names must match exactly, including spaces. Keep the songs in this addon's Songs folder. Do not use D:\\ paths or internet links; WoW addons cannot read them.\n\n" ..
-        "Lyrics: type /grfm lyrics test to test the Maxi Player lyric scroller. Album packs can register lyrics by song id.\n\n" ..
-        "Secret Frequency: GuildRadioFM contains optional music-themed Easter eggs. They do not affect normal addon use."
-    )
-
-    frame.closeButton = MakeButton(frame, "Close", 80, 24, function() frame:Hide() end)
-    frame.closeButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 14)
-end
-
-function GuildRadioFM:ToggleAddSongsWindow()
-    self:CreateAddSongsWindow()
-    if self.addSongsFrame:IsShown() then
-        self.addSongsFrame:Hide()
-    else
-        self.addSongsFrame:Show()
+    local holder = CreateFrame("Frame", nil, right)
+    holder:SetPoint("TOPLEFT", 0, -46)
+    holder:SetPoint("BOTTOMRIGHT", 0, 0)
+    Fill(holder, C.surface)
+    Outline(holder, C.line)
+    p.songs = List(holder, 28, 10, function(row)
+        row.num = Text(row, 11, C.faint, BODY_FONT, "RIGHT")
+        row.num:SetPoint("LEFT", 6, 0); row.num:SetWidth(20)
+        row.title = Text(row, 13, C.text)
+        row.title:SetPoint("LEFT", 34, 0)
+        row.rm = IconButton(row, "minus", 12, function(b) R:RemovePlaylistSong(b:GetParent().item.e) end, "Remove", 26)
+        row.rm:SetPoint("RIGHT", -6, 0)
+        row.down = IconButton(row, "down", 12, function(b) R:MovePlaylistSong(b:GetParent().item.e, 1) end, "Move down", 26)
+        row.down:SetPoint("RIGHT", row.rm, "LEFT", 0, 0)
+        row.up = IconButton(row, "up", 12, function(b) R:MovePlaylistSong(b:GetParent().item.e, -1) end, "Move up", 26)
+        row.up:SetPoint("RIGHT", row.down, "LEFT", 0, 0)
+        row.title:SetPoint("RIGHT", row.up, "LEFT", -6, 0)
+        for _, b in ipairs({ row.rm, row.down, row.up }) do Wheel(b, row.wheel) end
+        row:SetScript("OnClick", function(selfRow)
+            if not selfRow.item then return end
+            R.db.playlistEntryIndex = selfRow.item.e
+            R:UpdatePlaylistWindow()
+        end)
+        row:SetScript("OnDoubleClick", function(selfRow) if selfRow.item then R:PlayPlaylistEntry(selfRow.item.e) end end)
+        Tip(row, nil)
+    end, function(row, item)
+        row.num:SetText(item.e)
+        row.title:SetText(item.song.title or "Untitled")
+        local sel = item.e == R.db.playlistEntryIndex
+        row.selected = sel
+        local playing = R.db.isPlaying and R.db.playFromPlaylist and sel
+        SetColor(row.title, playing and C.acc or C.text)
+        if sel then row.mark:Show() end
+        local fixed = item.runtime
+        for _, b in ipairs({ row.rm, row.down, row.up }) do if fixed then b:Hide() else b:Show() end end
+    end, function()
+        local pl = R:GetSelectedPlaylist()
+        local out = {}
+        for e, idx in ipairs(pl and pl.songs or {}) do
+            local song = R:GetSong(idx)
+            if song then out[#out + 1] = { e = e, song = song, runtime = pl.runtime } end
+        end
+        return out
+    end, "playlistSongScroll")
+    p.songs:SetPoint("TOPLEFT", 1, -1)
+    p.songs:SetPoint("BOTTOMRIGHT", -1, 1)
+    p.songs.empty = function(row)
+        row.num:SetText(""); row.rm:Hide(); row.down:Hide(); row.up:Hide()
+        local pl = R:GetSelectedPlaylist()
+        row.title:SetText(pl and (pl.runtime and "This song pack is empty." or "Empty. Click Add songs above.") or "Create a playlist on the left.")
+        SetColor(row.title, C.faint)
     end
 end
 
-function GuildRadioFM:CreateHiddenFrequencyWindow()
-    if self.hiddenFrequencyFrame then return end
-
-    local frame = MakeWindow("hiddenFrequencyFrame", "GuildRadioFMHiddenFrequencyFrame", "The Hidden Frequency", 520, 360)
-    frame.subtitle = MakeText(frame, "GameFontNormalSmall")
-    frame.subtitle:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -46)
-    frame.subtitle:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -46)
-    frame.subtitle:SetText("Future transmission slots. Audio files are not included yet.")
-    frame.subtitle:SetTextColor(0.78, 0.72, 0.6)
-
-    frame.list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.list:SetPoint("TOPLEFT", frame.subtitle, "BOTTOMLEFT", 0, -14)
-    frame.list:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 50)
-    ApplyInset(frame.list)
-
-    frame.rows = {}
-    for i = 1, 5 do
-        local row = frame.list:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row:SetJustifyH("LEFT")
-        row:SetPoint("LEFT", frame.list, "LEFT", 12, 0)
-        row:SetPoint("RIGHT", frame.list, "RIGHT", -12, 0)
-        row:SetPoint("TOP", frame.list, "TOP", 0, -12 - ((i - 1) * 34))
-        frame.rows[i] = row
-    end
-
-    frame.closeButton = MakeButton(frame, "Close", 80, 24, function() frame:Hide() end)
-    frame.closeButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 14)
-
-    self:UpdateHiddenFrequencyWindow()
+function R:UpdatePlaylistWindow()
+    if not PageShown("playlists") then return end
+    local p = self.mainFrame.pages.playlists
+    local pl = self:GetSelectedPlaylist()
+    p.head:SetText(pl and pl.name or "Playlists")
+    p.headSub:SetText(pl and ((#(pl.songs or {})) .. " songs" .. (pl.runtime and "  ·  song pack" or "")) or "Make one with the box on the left")
+    local fixed = not pl or pl.runtime
+    p.del:SetDisabledLook(fixed)
+    p.clear:SetDisabledLook(fixed)
+    p.playAll:SetDisabledLook(not pl or #(pl.songs or {}) == 0)
+    if fixed then p.adding = false end
+    p.addBtn:SetDisabledLook(fixed)
+    p.addBtn:SetLabel(p.adding and "Done" or "Add songs")
+    p.addBtn:SetStyle(p.adding and "primary" or "ghost")
+    if p.adding then p.pick:Show(); p.pickList:Refresh() else p.pick:Hide() end
+    p.lists:Refresh()
+    p.songs:Refresh()
 end
 
-function GuildRadioFM:UpdateHiddenFrequencyWindow()
-    local frame = self.hiddenFrequencyFrame
-    if not frame then return end
-
-    local playlist = self.GetHiddenFrequencyPlaylist and self:GetHiddenFrequencyPlaylist() or nil
-    if not playlist then
-        frame.subtitle:SetText("No hidden playlist data found.")
-        for _, row in ipairs(frame.rows or {}) do row:SetText("") end
-        return
+-- ---------- Live sets ----------
+function R:BuildLivePage(p)
+    local card = CreateFrame("Frame", nil, p)
+    card:SetPoint("TOPLEFT", 0, 0)
+    card:SetPoint("TOPRIGHT", 0, 0)
+    card:SetHeight(70)
+    Fill(card, C.surface)
+    Outline(card, C.line)
+    card.icon = Icon(card, "live", 28)
+    card.icon:SetPoint("LEFT", 16, 0)
+    card.title = Text(card, 16, C.text, TITLE_FONT)
+    card.title:SetPoint("TOPLEFT", 58, -16)
+    card.sub = Text(card, 12, C.dim)
+    card.sub:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -6)
+    card.main = TextButton(card, "Open room", 96, 28, function()
+        local eb = EB()
+        if eb.live then eb:EndSet() else eb:GoLive() end
+    end, "primary")
+    card.main:SetPoint("RIGHT", -14, 0)
+    card.tune = TextButton(card, "Tune in", 86, 28, function()
+        local eb = EB()
+        if eb.tuned then eb:TuneOut() else eb:TuneIn() end
+    end, "ghost")
+    card.tune:SetPoint("RIGHT", card.main, "LEFT", -8, 0)
+    card.invite = TextButton(card, "Invite", 66, 28, function(b) R:ToggleInviteMenu(b) end, "ghost")
+    card.invite:SetPoint("RIGHT", card.main, "LEFT", -8, 0)
+    -- room name: click it (host only) to rename
+    card.rename = CreateFrame("EditBox", nil, card)
+    card.rename:SetFont(TITLE_FONT, 16, "")
+    card.rename:SetTextColor(C.text[1], C.text[2], C.text[3])
+    card.rename:SetAutoFocus(false)
+    card.rename:SetMaxLetters(32)
+    card.rename:SetHeight(22)
+    card.rename:SetPoint("TOPLEFT", 58, -12)
+    card.rename:SetWidth(220)
+    Fill(card.rename, C.raised)
+    card.rename:Hide()
+    card.rename:SetScript("OnEnterPressed", function(selfB) EB():SetRoomName(selfB:GetText()); selfB:ClearFocus(); selfB:Hide(); R:UpdateLive() end)
+    card.rename:SetScript("OnEscapePressed", function(selfB) selfB:ClearFocus(); selfB:Hide(); R:UpdateLive() end)
+    card.titleHit = CreateFrame("Button", nil, card)
+    card.titleHit:SetPoint("TOPLEFT", card.title, "TOPLEFT")
+    card.titleHit:SetPoint("BOTTOMRIGHT", card.title, "BOTTOMRIGHT")
+    function card.titleHit:Hover(h) if EB().live then SetColor(card.title, h and C.acc or C.text) end end
+    Tip(card.titleHit, function() return EB().live and "Click to rename your room" or nil end)
+    card.titleHit:SetScript("OnClick", function()
+        if not EB().live then return end
+        card.rename:SetText(EB():RoomName())
+        card.rename:Show()
+        card.rename:SetFocus()
+        card.rename:HighlightText()
+    end)
+    card.pass = TextButton(card, "Pass host", 82, 28, function(b) R:TogglePassMenu(b) end, "ghost")
+    card.pass:SetPoint("RIGHT", card.invite, "LEFT", -6, 0)
+    -- other live sets, as pills under the title
+    card.sets = {}
+    for i = 1, 3 do
+        local pill = Pill(card, "Room", function(b) local eb = EB(); if b.full then eb.focus = b.full; eb:TuneIn(b.full) end end)
+        pill:Hide()
+        card.sets[i] = pill
     end
+    card.title:SetPoint("RIGHT", card, "RIGHT", -290, 0)
+    card.sub:SetPoint("RIGHT", card, "RIGHT", -290, 0)
+    p.card = card
+    local pulse = 0
+    card:SetScript("OnUpdate", function(_, el)
+        pulse = pulse + el
+        local eb = EB()
+        if eb and (eb.live or eb.tuned) then card.icon:SetAlpha(0.65 + 0.35 * math.sin(pulse * 4)) else card.icon:SetAlpha(1) end
+    end)
 
-    frame.title:SetText(playlist.name or "The Hidden Frequency")
-    frame.subtitle:SetText("Future transmission slots. Audio files are not included yet.")
+    local colW = (W - 36 - 14) / 2
+    -- request line (left)
+    p.qHead = Eyebrow(p, "Request line")
+    p.qHead:SetPoint("TOPLEFT", 0, -88)
+    p.next = Pill(p, "Play next", function() if not EB():PlayTopRequest() then R:Print("No requests waiting.") end end)
+    p.next:SetPoint("TOPLEFT", colW - 150, -82)
+    p.open = Pill(p, "Closed", function() R.db.eb.open = not R.db.eb.open; EB():BroadcastQueue() end)
+    p.open:SetPoint("LEFT", p.next, "RIGHT", 6, 0)
+    local qh = CreateFrame("Frame", nil, p)
+    qh:SetPoint("TOPLEFT", 0, -108)
+    qh:SetPoint("BOTTOMLEFT", 0, 22)
+    qh:SetWidth(colW)
+    Fill(qh, C.surface)
+    Outline(qh, C.line)
+    p.q = List(qh, 28, 7, function(row)
+        row.n = Text(row, 11, C.faint, BODY_FONT, "RIGHT")
+        row.n:SetPoint("LEFT", 4, 0); row.n:SetWidth(16)
+        row.title = Text(row, 13, C.text)
+        row.title:SetPoint("TOPLEFT", 28, -3)
+        row.who = Text(row, 10, C.faint)
+        row.who:SetPoint("BOTTOMLEFT", 28, 3)
+        row.meta = Text(row, 11, C.dim, BODY_FONT, "RIGHT")
+        row.meta:SetPoint("RIGHT", -10, 0)
+        row.title:SetPoint("RIGHT", row.meta, "LEFT", -6, 0)
+        row:SetScript("OnClick", function(selfRow, mouse)
+            local eb = EB()
+            if not selfRow.item then return end
+            if eb.live then
+                if mouse == "RightButton" then eb:Decline(selfRow.item.key, IsShiftKeyDown())
+                else
+                    local index = eb:IndexOfKey(selfRow.item.key)
+                    if index then R:Play(index) end
+                end
+            else
+                eb:Request(selfRow.item.key)
+            end
+        end)
+        Tip(row, function() return EB().live and "Click: play now   Right-click: decline   Shift+right-click: never play" or "Click to vote" end)
+    end, function(row, item, n)
+        local eb = EB()
+        local age = eb.Now() - item.at
+        row.n:SetText(n)
+        row.title:SetText(eb:TitleOf(item.key))
+        row.who:SetText(item.owner or "")
+        local late = age >= eb.OVERDUE
+        local wait = age < 60 and "now" or (math.floor(age / 60) .. "m")
+        row.meta:SetText((late and "|cffffb030" or "") .. item.votes .. (item.votes == 1 and " vote" or " votes") .. "  ·  " .. wait .. (late and "|r" or ""))
+    end, function()
+        local eb = EB()
+        if eb.live then eb:SortQueue(); return eb.queue end
+        return eb:RemoteList()
+    end, "liveQueueScroll")
+    p.q:SetPoint("TOPLEFT", 1, -1)
+    p.q:SetPoint("BOTTOMRIGHT", -1, 1)
+    p.q.empty = function(row)
+        row.n:SetText(""); row.who:SetText(""); row.meta:SetText("")
+        local eb = EB()
+        row.title:SetText((eb.live or eb.tuned or eb:CurrentDJ()) and "No requests yet." or "Requests show up here during a set.")
+        SetColor(row.title, C.faint)
+    end
+    p.qFoot = Text(p, 10, C.faint)
+    p.qFoot:SetPoint("BOTTOMLEFT", 0, 4)
+    p.qFoot:SetText("5 requests each  ·  3+ min waiting goes first, then votes")
 
-    local songs = playlist.songs or {}
-    for index, row in ipairs(frame.rows or {}) do
-        local song = songs[index]
-        if song then
-            local state = song.locked and "LOCKED" or "UNLOCKED"
-            row:SetText(index .. ". " .. (song.title or "Unknown Signal") .. "  |  " .. state)
-            row:SetTextColor(song.locked and 0.56 or 1, song.locked and 0.50 or 0.88, song.locked and 0.40 or 0.58)
+    -- right column: room chat or requests
+    p.rHead = Eyebrow(p, "")
+    p.rHead:SetPoint("TOPLEFT", colW + 14, -88)
+    p.chatPill = Pill(p, "Room chat", function() R.db.liveRight = "chat"; R:UpdateLive() end)
+    p.chatPill:SetPoint("TOPLEFT", colW + 14, -82)
+    p.reqPill = Pill(p, "Request a song", function() R.db.liveRight = "requests"; R:UpdateLive() end)
+    p.reqPill:SetPoint("LEFT", p.chatPill, "RIGHT", 4, 0)
+    p.rSearch = Search(p, colW, "Search", function() R.db.liveLibScroll = 0; R:UpdateLive() end)
+    p.rSearch:SetPoint("TOPLEFT", colW + 14, -104)
+    local rh = CreateFrame("Frame", nil, p)
+    p.rh = rh
+    rh:SetPoint("TOPLEFT", colW + 14, -136)
+    rh:SetPoint("BOTTOMRIGHT", 0, 22)
+    Fill(rh, C.surface)
+    Outline(rh, C.line)
+    p.r = List(rh, 26, 6, function(row)
+        row.title = Text(row, 13, C.text)
+        row.title:SetPoint("LEFT", 12, 0)
+        row.state = Text(row, 11, C.faint, BODY_FONT, "RIGHT")
+        row.state:SetPoint("RIGHT", -10, 0)
+        row.title:SetPoint("RIGHT", row.state, "LEFT", -6, 0)
+        row:SetScript("OnClick", function(selfRow) if selfRow.item then EB():Request(EB().KeyOf(selfRow.item)) end end)
+        Tip(row, nil)
+    end, function(row, song)
+        local eb = EB()
+        local key = eb.KeyOf(song)
+        row.title:SetText(song.title or key)
+        if R.db.eb.blocked[key] then row.state:SetText("blocked"); SetColor(row.state, C.faint)
+        elseif eb:Requested(key) then row.state:SetText("requested"); SetColor(row.state, C.acc)
+        else row.state:SetText("request"); SetColor(row.state, C.dim) end
+    end, function()
+        local needle = string.lower(p.rSearch:GetText() or "")
+        local out = {}
+        for _, song in ipairs(R.songs or {}) do
+            if needle == "" or string.find(string.lower(song.title or ""), needle, 1, true) then out[#out + 1] = song end
+        end
+        return out
+    end, "liveLibScroll")
+    p.r:SetPoint("TOPLEFT", 1, -1)
+    p.r:SetPoint("BOTTOMRIGHT", -1, 1)
+    p.rFoot = Text(p, 10, C.faint, BODY_FONT, "RIGHT")
+    p.rFoot:SetPoint("BOTTOMRIGHT", 0, 4)
+
+    -- room chat: parchment-style lines, class-colored names, one input line
+    local ch = CreateFrame("Frame", nil, p)
+    p.chat = ch
+    ch:SetPoint("TOPLEFT", colW + 14, -108)
+    ch:SetPoint("BOTTOMRIGHT", 0, 22)
+    Fill(ch, C.surface)
+    Outline(ch, C.line)
+    ch.lines = {}
+    ch.offset = 0
+    local LINES = 8
+    for i = 1, LINES do
+        local fs = Text(ch, 12, C.text)
+        fs:SetPoint("TOPLEFT", 8, -6 - (i - 1) * 19)
+        fs:SetPoint("RIGHT", ch, "RIGHT", -8, 0)
+        ch.lines[i] = fs
+    end
+    Wheel(ch, function(d) ch.offset = math.max(0, ch.offset + d); R:UpdateLive() end)
+    ch.input = CreateFrame("EditBox", nil, ch)
+    ch.input:SetHeight(24)
+    ch.input:SetPoint("BOTTOMLEFT", 1, 1)
+    ch.input:SetPoint("BOTTOMRIGHT", -1, 1)
+    ch.input:SetFont(BODY_FONT, 13, "")
+    ch.input:SetTextColor(C.text[1], C.text[2], C.text[3])
+    ch.input:SetTextInsets(8, 8, 0, 0)
+    ch.input:SetAutoFocus(false)
+    ch.input:SetMaxLetters(200)
+    Fill(ch.input, C.raised)
+    ch.input.hint = Text(ch.input, 12, C.faint)
+    ch.input.hint:SetPoint("LEFT", 8, 0)
+    ch.input.hint:SetText("Say something to the room")
+    ch.input:SetScript("OnTextChanged", function(selfB) if (selfB:GetText() or "") == "" then selfB.hint:Show() else selfB.hint:Hide() end end)
+    ch.input:SetScript("OnEnterPressed", function(selfB) EB():SendChat(selfB:GetText()); selfB:SetText(""); ch.offset = 0 end)
+    ch.input:SetScript("OnEscapePressed", function(selfB) selfB:ClearFocus() end)
+end
+
+function R:UpdateChat()
+    if not PageShown("live") then return end
+    local p = self.mainFrame.pages.live
+    local ch = p.chat
+    local eb = EB()
+    local log = eb.chatLog
+    local n = #ch.lines
+    ch.offset = math.min(ch.offset, math.max(0, #log - n))
+    local first = math.max(1, #log - n + 1 - ch.offset)
+    for i, fs in ipairs(ch.lines) do
+        local e = log[first + i - 1]
+        if e and (first + i - 1) <= #log - ch.offset then
+            if e.system then fs:SetText("|cff8c826f" .. e.text .. "|r")
+            else fs:SetText(eb:ColorName(e.who) .. "|cffbdb6a6:|r " .. e.text) end
         else
-            row:SetText("")
+            fs:SetText("")
         end
     end
+    if #log == 0 then ch.lines[1]:SetText(eb:RoomHost() and "|cff8c826fNo messages yet.|r" or "|cff8c826fOpen a room or tune into one to chat.|r") end
 end
 
-function GuildRadioFM:ToggleHiddenFrequencyWindow(show)
-    self:CreateHiddenFrequencyWindow()
-    self:UpdateHiddenFrequencyWindow()
-    if show == true then
-        self.hiddenFrequencyFrame:Show()
-    elseif self.hiddenFrequencyFrame:IsShown() then
-        self.hiddenFrequencyFrame:Hide()
+function R:UpdateLive()
+    local eb = EB()
+    if not eb or not self.db then return end
+    local dj = eb:CurrentDJ()
+    local f = self.mainFrame
+    if f then
+        local someone = eb.live or eb.tuned or dj
+        if someone then f.tabs.live.dot:Show() else f.tabs.live.dot:Hide() end
+        f.headLive:SetText(eb.live and ("ON AIR  ·  " .. (eb.listenerCount or 0) .. " listening") or (eb.tuned and "TUNED IN" or (dj and (string.upper(dj.name) .. " IS LIVE") or "")))
+    end
+    if self.UpdateMiniWindow then self:UpdateMiniWindow() end
+    if self.UpdateNowPage then self:UpdateNowPage() end
+    if not PageShown("live") then return end
+    local p = f.pages.live
+    local card = p.card
+    local song = self.db.isPlaying and self:GetCurrentSong()
+    if eb.live then
+        card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
+        card.title:SetText(eb:RoomName())
+        card.sub:SetText("On air" .. (song and ("  ·  " .. song.title) or "") .. "  ·  " .. (eb.listenerCount or 0) .. " tuned in  ·  requests " .. (self.db.eb.open and "open" or "closed") .. (song and "" or "  ·  play a song to start"))
+    elseif eb.tuned then
+        local d = eb.djs[eb.tuned]
+        card.icon:SetVertexColor(C.acc2[1], C.acc2[2], C.acc2[3])
+        card.title:SetText((d and d.room or (eb.Short(eb.tuned) .. "'s Room")) .. (d and d.key ~= "" and ("  ·  " .. eb:TitleOf(d.key)) or ""))
+        local j = eb:JoiningIn()
+        card.sub:SetText(eb.missing and "|cffffb030You don't have this song. Get the latest GuildRadioFM from the DJ.|r"
+            or (j and string.format("Joining in %ds, in time with everyone", math.ceil(j)))
+            or (eb.waiting and "You'll join at the next song" or ((d and d.count or 0) .. " tuned in  ·  in sync")))
+    elseif dj then
+        dj = eb:FocusDJ() or dj
+        card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
+        local n = #eb:LiveSets()
+        card.title:SetText(n > 1 and (n .. " rooms open, pick one") or ((dj.room or dj.name) .. (dj.key ~= "" and ("  ·  " .. eb:TitleOf(dj.key)) or "")))
+        card.sub:SetText("Hosted by " .. dj.name .. "  ·  " .. (dj.count or 0) .. " tuned in. Tune in to hear it in sync.")
     else
-        self.hiddenFrequencyFrame:Show()
+        card.icon:SetVertexColor(C.faint[1], C.faint[2], C.faint[3])
+        card.title:SetText("No rooms open")
+        card.sub:SetText("Open a room, invite guildmates, and everyone in it hears the same moment.")
+    end
+    -- several sets live: show them as pills (not while you're the host)
+    local sets = eb:LiveSets()
+    local px = 58
+    for i, pill in ipairs(card.sets) do
+        local d = sets[i]
+        if d and not eb.live and #sets > 1 then
+            pill.full = d.full
+            pill:SetLabel((d.room or d.name) .. "  ·  " .. (d.count or 0))
+            pill:SetWidth(pill.label:GetStringWidth() + 22)
+            pill:SetOn(eb.tuned == d.full)
+            pill:ClearAllPoints()
+            pill:SetPoint("TOPLEFT", card, "TOPLEFT", px, -40)
+            px = px + pill:GetWidth() + 4
+            pill:Show()
+        else
+            pill:Hide()
+        end
+    end
+    if not eb.live and #sets > 1 then card.sub:Hide() else card.sub:Show() end
+    if eb.live then
+        card.pass:Show()
+        card.pass:SetLabel(eb.offerTo and ("Asking " .. eb.offerTo) or "Pass host")
+        card.pass:SetWidth(eb.offerTo and 110 or 82)
+        card.pass:SetDisabledLook(#eb:ListenerNames() == 0 and not eb.offerTo)
+    else
+        card.pass:Hide()
+        if self.passMenu then self.passMenu:Hide() end
+    end
+    card.main:SetLabel(eb.live and "Close room" or "Open room")
+    card.main:SetStyle(eb.live and "danger" or "primary")
+    card.tune:SetLabel(eb.tuned and "Tune out" or "Tune in")
+    card.invite:Show()
+    card.invite:ClearAllPoints()
+    if eb.live then card.tune:Hide(); card.invite:SetPoint("RIGHT", card.main, "LEFT", -8, 0)
+    else
+        card.tune:Show()
+        card.invite:SetPoint("RIGHT", card.tune, "LEFT", -6, 0)
+        card.tune:SetDisabledLook(not (dj or eb.tuned))
+    end
+    if eb.live then p.next:Show(); p.open:Show(); p.open:SetLabel(self.db.eb.open and "Open" or "Closed"); p.open:SetOn(self.db.eb.open)
+    else p.next:Hide(); p.open:Hide() end
+    p.q:Refresh()
+    local view = self.db.liveRight or "chat"
+    p.chatPill:SetOn(view == "chat")
+    p.reqPill:SetOn(view == "requests")
+    if view == "chat" then
+        p.chat:Show(); p.rSearch:Hide(); p.rh:Hide()
+        p.rFoot:SetText("Only people in this room see it")
+        self:UpdateChat()
+    else
+        p.chat:Hide(); p.rSearch:Show(); p.rh:Show()
+        p.r:Refresh()
+        p.rFoot:SetText(eb.live and "Click to add to your line" or ((eb.tuned or dj) and "Click to request" or ""))
     end
 end
 
-function GuildRadioFM:GetMinimapAngle()
+-- pick a listener to take over the set
+function R:TogglePassMenu(anchor)
+    local eb = EB()
+    if eb.offerTo then return end
+    if not self.passMenu then
+        local m = CreateFrame("Frame", nil, self.mainFrame)
+        m:SetFrameLevel(self.mainFrame:GetFrameLevel() + 20)
+        m:SetWidth(170)
+        Fill(m, C.bg)
+        Outline(m, C.acc, 0.35)
+        m:EnableMouse(true)
+        m.head = Eyebrow(m, "Make host")
+        m.head:SetPoint("TOPLEFT", 10, -8)
+        m.rows = {}
+        for i = 1, 8 do
+            local r = CreateFrame("Button", nil, m)
+            r:SetHeight(24)
+            r:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 24)
+            r:SetPoint("TOPRIGHT", -4, -22 - (i - 1) * 24)
+            r.hl = Fill(r, C.text, 0)
+            r.label = Text(r, 13, C.text)
+            r.label:SetPoint("LEFT", 8, 0)
+            function r:Hover(h) self.hl:SetAlpha(h and 0.06 or 0) end
+            Tip(r, nil)
+            r:SetScript("OnClick", function(selfR) m:Hide(); EB():OfferHost(selfR.name) end)
+            m.rows[i] = r
+        end
+        self.passMenu = m
+    end
+    local m = self.passMenu
+    if m:IsShown() then m:Hide(); return end
+    local names = eb:ListenerNames()
+    for i, r in ipairs(m.rows) do
+        if names[i] then r.name = names[i]; r.label:SetText(names[i]); r:Show() else r:Hide() end
+    end
+    m:SetHeight(30 + math.min(#names, 8) * 24)
+    m:ClearAllPoints()
+    m:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -4)
+    m:Show()
+end
+
+-- invite guildmates to your room: whole guild, or pick people (online now)
+function R:ToggleInviteMenu(anchor)
+    local eb = EB()
+    if not self.inviteMenu then
+        local m = CreateFrame("Frame", nil, self.mainFrame)
+        m:SetFrameLevel(self.mainFrame:GetFrameLevel() + 20)
+        m:SetWidth(260)
+        Fill(m, C.bg)
+        Outline(m, C.acc, 0.35)
+        m:EnableMouse(true)
+        m.head = Eyebrow(m, "Invite to your room")
+        m.head:SetPoint("TOPLEFT", 10, -8)
+        m.rows = {}
+        m.offset = 0
+        for i = 1, 11 do
+            local r = CreateFrame("Button", nil, m)
+            r:SetHeight(24)
+            r:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 24)
+            r:SetPoint("TOPRIGHT", -4, -22 - (i - 1) * 24)
+            r.hl = Fill(r, C.text, 0)
+            r.label = Text(r, 13, C.text)
+            r.label:SetPoint("LEFT", 8, 0)
+            r.meta = Text(r, 10, C.faint, BODY_FONT, "RIGHT")
+            r.meta:SetPoint("RIGHT", -8, 0)
+            r.label:SetPoint("RIGHT", r.meta, "LEFT", -6, 0)
+            function r:Hover(h) self.hl:SetAlpha(h and 0.06 or 0) end
+            Tip(r, nil)
+            r:SetScript("OnClick", function(selfR)
+                if selfR.everyone then EB():Announce(); if not EB().live then EB():GoLive(); EB():Announce() end; m:Hide()
+                elseif selfR.full then EB():InviteOne(selfR.full); R:FillInviteMenu() end
+            end)
+            Wheel(r, function(d) m.offset = math.max(0, m.offset - d); R:FillInviteMenu() end)
+            m.rows[i] = r
+        end
+        Wheel(m, function(d) m.offset = math.max(0, m.offset - d); R:FillInviteMenu() end)
+        self.inviteMenu = m
+    end
+    local m = self.inviteMenu
+    if m:IsShown() then m:Hide(); return end
+    if self.passMenu then self.passMenu:Hide() end
+    eb:FindPeers()
+    m.offset = 0
+    m:ClearAllPoints()
+    m:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -4)
+    m:Show()
+    self:FillInviteMenu()
+    if C_Timer and C_Timer.After then C_Timer.After(1.5, function() if m:IsShown() then R:FillInviteMenu() end end) end
+end
+
+function R:FillInviteMenu()
+    local m = self.inviteMenu
+    if not m or not m:IsShown() then return end
+    local eb = EB()
+    local mates = eb:OnlineGuildmates()
+    local items = { { everyone = true } }
+    for _, g in ipairs(mates) do items[#items + 1] = g end
+    m.offset = math.min(m.offset, math.max(0, #items - #m.rows))
+    local shown = 0
+    for i, r in ipairs(m.rows) do
+        local it = items[i + m.offset]
+        r.everyone, r.full = nil, nil
+        if it then
+            shown = shown + 1
+            if it.everyone then
+                r.everyone = true
+                r.label:SetText("Whole guild")
+                SetColor(r.label, C.acc)
+                r.meta:SetText(#mates .. " online  ·  posts in guild chat")
+            else
+                r.full = it.full
+                local invited = eb.invited[it.name] and (eb.Now() - eb.invited[it.name] < 120)
+                r.label:SetText(it.name)
+                SetColor(r.label, invited and C.faint or C.text)
+                r.meta:SetText(invited and "invited" or (it.level .. "  ·  " .. it.zone .. (it.hasRadio and "  ·  has radio" or "")))
+            end
+            r:Show()
+        else
+            r:Hide()
+        end
+    end
+    if #mates == 0 then
+        m.rows[2]:Show()
+        m.rows[2].label:SetText(IsInGuild() and "Nobody else is online" or "Join a guild to invite people")
+        SetColor(m.rows[2].label, C.faint)
+        m.rows[2].meta:SetText("")
+        shown = 2
+    end
+    m:SetHeight(30 + shown * 24)
+end
+
+-- ---------- Settings ----------
+function R:BuildSettingsPage(p)
+    local rows = {
+        { "Shuffle", function() return R.db.shuffle end, function() R:ToggleShuffle() end },
+        { "Repeat the current song", function() return R.db.repeatSong end, function() R:ToggleRepeat() end },
+        { "Play the next song automatically", function() return R.db.autoNext end, function() R:ToggleAutoNext() end },
+        { "Mute", function() return R.db.muted end, function() R:ToggleMute() end },
+        { "Minimap icon", function() return not (R.db.minimap and R.db.minimap.hide) end, function(on) R:SetMinimapButtonShown(on) end },
+        { "Keep playing when tabbed out", function() return R.db.bgSound ~= false end, function(on) R.db.bgSound = on; R:ApplyBackgroundSound(); R:RefreshAll() end },
+        { "Room chat in the chat window", function() return R.db.eb.chatInChat ~= false end, function(on) R.db.eb.chatInChat = on; R:RefreshAll() end },
+        { "Mini player", function() return R.miniFrame and R.miniFrame:IsShown() end, function(on) R:ShowMini(on) end },
+        { "Now-playing pop-up", function() return R.db.toast ~= false end, function(on) R.db.toast = on; R:RefreshAll() end },
+        { "Live invites from the guild", function() return R.db.invites ~= false end, function(on) R.db.invites = on; R:RefreshAll() end },
+    }
+    p.switches = {}
+    local colW = (W - 36 - 24) / 2
+    for i, r in ipairs(rows) do
+        local col = (i - 1) % 2
+        local line = math.floor((i - 1) / 2)
+        local holder = CreateFrame("Frame", nil, p)
+        holder:SetSize(colW, 34)
+        holder:SetPoint("TOPLEFT", col * (colW + 24), -line * 38)
+        Fill(holder, C.surface)
+        Outline(holder, C.line)
+        local label = Text(holder, 13, C.text)
+        label:SetPoint("LEFT", 14, 0)
+        label:SetText(r[1])
+        local s = Switch(holder, function(on) r[3](on) end)
+        s:SetPoint("RIGHT", -12, 0)
+        s.get = r[2]
+        p.switches[i] = s
+    end
+    local y = -math.ceil(#rows / 2) * 38 - 6
+    p.sizeLabel = Eyebrow(p, "Size")
+    p.sizeLabel:SetPoint("TOPLEFT", 0, y - 4)
+    p.size = Slider(p, 160, function(v) R:SetFrameScale(R.mainFrame, "scale", 0.5 + v / 100 * 0.9) end)
+    p.size:SetPoint("TOPLEFT", 70, y - 2)
+    p.sizeText = Text(p, 11, C.dim)
+    p.sizeText:SetPoint("LEFT", p.size, "RIGHT", 10, 0)
+    p.bgLabel = Eyebrow(p, "Background")
+    p.bgLabel:SetPoint("TOPLEFT", 296, y - 4)
+    p.bgPills = {}
+    local px = 370
+    for _, b in ipairs(BACKDROPS) do
+        local pill = Pill(p, b.label, function() R.db.backdrop = b.key; R:ApplyBackdrop(); R:UpdateSettingsWindow() end)
+        pill:SetPoint("TOPLEFT", px, y + 1)
+        px = px + pill:GetWidth() + 4
+        pill.key = b.key
+        p.bgPills[#p.bgPills + 1] = pill
+    end
+    y = y - 30
+    p.volLabel = Eyebrow(p, "Volume")
+    p.volLabel:SetPoint("TOPLEFT", 0, y - 4)
+    p.volume = Slider(p, 260, function(v) R.suppressVolumeUpdate = true; R:SetVolume(v); R.suppressVolumeUpdate = false end)
+    p.volume:SetPoint("TOPLEFT", 70, y - 2)
+    p.volText = Text(p, 11, C.dim)
+    p.volText:SetPoint("LEFT", p.volume, "RIGHT", 10, 0)
+    p.volNote = Text(p, 11, C.faint)
+    p.volNote:SetPoint("LEFT", p.volText, "RIGHT", 14, 0)
+    p.volNote:SetText("uses WoW's Dialog channel")
+
+    p.addHead = Eyebrow(p, "Adding songs")
+    p.addHead:SetPoint("TOPLEFT", 0, y - 38)
+    p.add = Text(p, 12, C.dim)
+    p.add:SetWordWrap(true)
+    p.add:SetJustifyV("TOP")
+    p.add:SetPoint("TOPLEFT", 0, y - 54)
+    p.add:SetPoint("RIGHT", p, "RIGHT", 0, 0)
+    p.add:SetSpacing(3)
+    p.add:SetText("Put MP3s in GuildRadioFM\\Songs, list them in SongList.lua (or use the Song Importer), then /reload. Rooms need everyone on the same songs: share one GuildRadioFM zip with the guild.")
+
+    p.credits = Text(p, 11, C.faint)
+    p.credits:SetPoint("BOTTOMLEFT", 0, 0)
+    p.credits:SetText("GuildRadioFM by Nez  ·  live sets by Noyze Komplaynt  ·  v" .. tostring(R.version))
+end
+
+function R:UpdateSettingsWindow()
+    if not PageShown("settings") then return end
+    local p = self.mainFrame.pages.settings
+    for _, s in ipairs(p.switches) do s:SetOn(s.get() and true or false) end
+    if not p.size.dragging then p.size:SetValue(((self.db.scale or 0.8) - 0.5) / 0.9 * 100) end
+    p.sizeText:SetText(math.floor((self.db.scale or 0.8) * 100 + 0.5) .. "%")
+    for _, pill in ipairs(p.bgPills) do pill:SetOn((self.db.backdrop or "kalimdor") == pill.key) end
+    if not p.volume.dragging then p.volume:SetValue(self.db.muted and 0 or self.db.volume) end
+    p.volText:SetText(self.db.muted and "muted" or (tostring(self.db.volume) .. "%"))
+end
+
+function R:UpdateMainWindow()
+    self:UpdateLive()
+end
+
+-- ---------- mini player ----------
+function R:CreateMiniWindow()
+    if self.miniFrame then return end
+    local m = CreateFrame("Frame", "GuildRadioFMMiniFrame", UIParent)
+    self.miniFrame = m
+    m:SetSize(300, 52)
+    m:SetFrameStrata("MEDIUM")
+    m:SetClampedToScreen(true)
+    m:SetMovable(true)
+    m:EnableMouse(true)
+    m:RegisterForDrag("LeftButton")
+    m:SetScript("OnDragStart", m.StartMoving)
+    m:SetScript("OnDragStop", function(selfM) selfM:StopMovingOrSizing(); R:SaveWindow(selfM, R.db.miniWindow) end)
+    local w = self.db.miniWindow or {}
+    m:SetPoint(w.point or "CENTER", UIParent, w.relativePoint or "CENTER", w.x or 0, w.y or -180)
+    Fill(m, C.bg)
+    Outline(m, C.line)
+    m.icon = m:CreateTexture(nil, "ARTWORK")
+    m.icon:SetTexture(EMBLEM)
+    m.icon:SetSize(32, 32)
+    m.icon:SetPoint("LEFT", 10, 1)
+    m.play = IconButton(m, "play", 14, function() if R.db.isPlaying then R:Stop() else R:Play() end end, nil, 26)
+    m.next = IconButton(m, "next", 12, function() R:Next() end, "Next", 24)
+    m.close = IconButton(m, "close", 10, function() R:ShowMini(false) end, nil, 20)
+    m.close:SetPoint("TOPRIGHT", -2, -2)
+    m.close:SetAlpha(0)
+    m.open = IconButton(m, "up", 10, function() R:ShowTab(R.db.tab or "now") end, "Open the full player", 20)
+    m.open:SetPoint("TOPRIGHT", m.close, "TOPLEFT", 0, 0)
+    m.next:SetPoint("RIGHT", -44, -1)
+    m.play:SetPoint("RIGHT", m.next, "LEFT", -2, 0)
+    m.eyebrow = Text(m, 9, C.faint)
+    m.eyebrow:SetPoint("TOPLEFT", 50, -10)
+    m.title = Text(m, 13, C.acc, TITLE_FONT)
+    m.title:SetPoint("TOPLEFT", 50, -23)
+    m.title:SetPoint("RIGHT", m.play, "LEFT", -6, 0)
+    m.eyebrow:SetPoint("RIGHT", m.play, "LEFT", -6, 0)
+    m.barFill = Tex(m, "OVERLAY", C.acc)
+    m.barFill:SetPoint("BOTTOMLEFT", 0, 0)
+    m.barFill:SetHeight(2)
+    m:SetScript("OnMouseUp", function(_, b) if b == "RightButton" then R:ToggleMainWindow() end end)
+    -- grab it anywhere, buttons included; the close button only shows while the mouse is over the player
+    for _, b in ipairs({ m.play, m.next, m.close, m.open }) do DragThrough(b, m, function() return R.db.miniWindow end) end
+    local hoverAcc = 0
+    m.hoverWatch = CreateFrame("Frame", nil, m)
+    m.hoverWatch:SetScript("OnUpdate", function(_, el)
+        hoverAcc = hoverAcc + el
+        if hoverAcc < 0.05 then return end
+        hoverAcc = 0
+        local over = m:IsMouseOver()
+        m.close:SetAlpha(over and 1 or 0)
+        m.open:SetAlpha(over and 1 or 0.5)
+    end)
+    local acc = 0
+    m:SetScript("OnUpdate", function(_, el) acc = acc + el; if acc > 0.1 then acc = 0; R:UpdateProgress() end end)
+    m.grip = self:AddScaleGrip(m, "miniScale")
+    m.grip:SetSize(12, 12)
+    m:SetScale(self.db.miniScale or 0.9)
+    m:Hide()
+end
+
+function R:ShowMini(on)
+    self:CreateMiniWindow()
+    self.db.miniShown = on and true or false
+    if on then self.miniFrame:Show() else self.miniFrame:Hide() end
+    self:UpdateMiniWindow()
+    if self.UpdateSettingsWindow then self:UpdateSettingsWindow() end
+end
+
+function R:ToggleMiniWindow()
+    self:CreateMiniWindow()
+    self:ShowMini(not self.miniFrame:IsShown())
+end
+
+function R:UpdateMiniWindow()
+    local m = self.miniFrame
+    if not m or not m:IsShown() then return end
+    local song = self:GetCurrentSong()
+    local eyebrow, ec = self:StatusLine()
+    m.eyebrow:SetText(eyebrow)
+    SetColor(m.eyebrow, ec)
+    m.title:SetText(song and song.title or "No songs")
+    m.play.icon:SetIcon(self.db.isPlaying and "stop" or "play")
+end
+
+-- ---------- now-playing toast + live invite card ----------
+local function Card(name, width)
+    local t = CreateFrame("Frame", name, UIParent)
+    t:SetSize(width, 52)
+    t:SetFrameStrata("DIALOG")
+    t:SetPoint("TOP", UIParent, "TOP", 0, -110)
+    Fill(t, C.bg)
+    Outline(t, C.line)
+    t.accent = Tex(t, "ARTWORK", C.acc)
+    t.accent:SetPoint("TOPLEFT"); t.accent:SetPoint("BOTTOMLEFT"); t.accent:SetWidth(2)
+    t.icon = t:CreateTexture(nil, "ARTWORK")
+    t.icon:SetTexture(EMBLEM)
+    t.icon:SetSize(32, 32)
+    t.icon:SetPoint("LEFT", 12, 0)
+    t.eyebrow = Text(t, 9, C.faint)
+    t.eyebrow:SetPoint("TOPLEFT", 52, -11)
+    t.title = Text(t, 14, C.text)
+    t.title:SetPoint("TOPLEFT", 52, -24)
+    t.title:SetPoint("RIGHT", -12, 0)
+    t:SetAlpha(0)
+    t:Hide()
+    t:SetScript("OnUpdate", function(selfT, el)
+        selfT.life = (selfT.life or 0) + el
+        local life, hold = selfT.life, selfT.hold or 3
+        local a = life < 0.25 and life / 0.25 or (life > hold and math.max(0, 1 - (life - hold) / 0.4) or 1)
+        selfT:SetAlpha(a)
+        if life > hold + 0.4 then selfT:Hide() end
+    end)
+    return t
+end
+
+function R:CreateToast()
+    if self.toastFrame then return end
+    self.toastFrame = Card("GuildRadioFMToastFrame", 300)
+end
+
+function R:ShowNowPlayingToast(song)
+    if self.db and self.db.toast == false then return end
+    if self.inviteFrame and self.inviteFrame:IsShown() then return end
+    self:CreateToast()
+    local t = self.toastFrame
+    local eyebrow, ec = self:StatusLine()
+    t.eyebrow:SetText(eyebrow == "STOPPED" and "NOW PLAYING" or eyebrow)
+    SetColor(t.eyebrow, ec)
+    t.title:SetText(song and song.title or self:GetCurrentTitle())
+    t.life, t.hold = 0, 3
+    t:Show()
+end
+
+function R:ShowInvite(name, room)
+    if self.db and self.db.invites == false then return end
+    if not self.inviteFrame then
+        local t = Card("GuildRadioFMInviteFrame", 340)
+        t.accent:SetVertexColor(C.live[1], C.live[2], C.live[3])
+        t:EnableMouse(true)
+        t.btn = TextButton(t, "Tune in", 74, 26, function() t:Hide(); EB():TuneIn() end, "primary")
+        t.btn:SetPoint("RIGHT", -30, 0)
+        t.x = IconButton(t, "close", 10, function() t:Hide() end, nil, 20)
+        t.x:SetPoint("RIGHT", -6, 0)
+        t.title:SetPoint("RIGHT", t.btn, "LEFT", -8, 0)
+        self.inviteFrame = t
+    end
+    local t = self.inviteFrame
+    t.eyebrow:SetText("LIVE ON GUILDRADIOFM")
+    SetColor(t.eyebrow, C.live)
+    t.title:SetText(name .. " invited you to " .. (room or (name .. "'s Room")))
+    t.life, t.hold = 0, 14
+    t:Show()
+end
+
+function R:ShowHandoff(from)
+    if not self.handoffFrame then
+        local t = Card("GuildRadioFMHandoffFrame", 380)
+        t:EnableMouse(true)
+        t.yes = TextButton(t, "Take over", 80, 26, function() t:Hide(); EB():AnswerHandoff(true) end, "primary")
+        t.no = TextButton(t, "No thanks", 76, 26, function() t:Hide(); EB():AnswerHandoff(false) end, "ghost")
+        t.no:SetPoint("RIGHT", -10, 0)
+        t.yes:SetPoint("RIGHT", t.no, "LEFT", -6, 0)
+        t.title:SetPoint("RIGHT", t.yes, "LEFT", -8, 0)
+        self.handoffFrame = t
+    end
+    local t = self.handoffFrame
+    t.eyebrow:SetText("HOST THE ROOM")
+    SetColor(t.eyebrow, C.acc)
+    t.title:SetText(from .. " wants you to host")
+    t.life, t.hold = 0, 25
+    t:Show()
+end
+
+-- ---------- minimap button ----------
+function R:GetMinimapAngle()
     self.db.minimap = self.db.minimap or { hide = false, angle = 225 }
     return tonumber(self.db.minimap.angle) or 225
 end
 
-function GuildRadioFM:PositionMinimapButton()
+function R:PositionMinimapButton()
     if not self.minimapButton or not Minimap then return end
     local angle = math.rad(self:GetMinimapAngle())
-    local radius = 80
-    local x = math.cos(angle) * radius
-    local y = math.sin(angle) * radius
     self.minimapButton:ClearAllPoints()
-    self.minimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    self.minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * 80, math.sin(angle) * 80)
 end
 
-function GuildRadioFM:UpdateMinimapButton()
+function R:UpdateMinimapButton()
     if not self.minimapButton or not self.db then return end
     self.db.minimap = self.db.minimap or { hide = false, angle = 225 }
-    if self.db.minimap.hide then
-        self.minimapButton:Hide()
-    else
-        self.minimapButton:Show()
-        self:PositionMinimapButton()
-    end
-    if self.optionsPanel and self.optionsPanel.minimapButton then
-        self.optionsPanel.minimapButton:SetChecked(not self.db.minimap.hide)
+    if self.db.minimap.hide then self.minimapButton:Hide() else self.minimapButton:Show(); self:PositionMinimapButton() end
+    local eb = EB()
+    if self.minimapButton.dot then
+        if eb and (eb.live or eb.tuned or eb:CurrentDJ()) then self.minimapButton.dot:Show() else self.minimapButton.dot:Hide() end
     end
 end
 
-function GuildRadioFM:SetMinimapButtonShown(shown)
+function R:SetMinimapButtonShown(shown)
     self.db.minimap = self.db.minimap or { hide = false, angle = 225 }
     self.db.minimap.hide = not shown
     self:UpdateMinimapButton()
+    self:UpdateSettingsWindow()
 end
 
-function GuildRadioFM:CreateMinimapButton()
+function R:CreateMinimapButton()
     if self.minimapButton or not Minimap then return end
-
     self.db.minimap = self.db.minimap or { hide = false, angle = 225 }
-    local button = CreateFrame("Button", "GuildRadioFMMinimapButton", Minimap)
-    self.minimapButton = button
-    button:SetSize(32, 32)
-    button:SetFrameStrata("MEDIUM")
-    button:SetFrameLevel(8)
-    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    button:RegisterForDrag("LeftButton")
-    button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-
-    button.icon = button:CreateTexture(nil, "BACKGROUND")
-    button.icon:SetTexture(ICON_TEXTURE)
-    button.icon:SetSize(24, 24)
-    button.icon:SetPoint("CENTER", button, "CENTER", 0, 0)
-    button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    button.border = button:CreateTexture(nil, "OVERLAY")
-    button.border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    button.border:SetSize(54, 54)
-    button.border:SetPoint("CENTER", button, "CENTER", 12, -12)
-
-    button:SetScript("OnClick", function(_, mouseButton)
-        if mouseButton == "RightButton" then
-            GuildRadioFM:OpenOptionsPanel()
-        else
-            GuildRadioFM:ToggleMainWindow()
-        end
+    local b = CreateFrame("Button", "GuildRadioFMMinimapButton", Minimap)
+    self.minimapButton = b
+    b:SetSize(32, 32)
+    b:SetFrameStrata("MEDIUM")
+    b:SetFrameLevel(8)
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b:RegisterForDrag("LeftButton")
+    b.icon = b:CreateTexture(nil, "ARTWORK")
+    b.icon:SetTexture(ICON)
+    b.icon:SetSize(30, 30)
+    b.icon:SetPoint("CENTER")
+    b.dot = Tex(b, "OVERLAY", C.live)
+    b.dot:SetSize(7, 7)
+    b.dot:SetPoint("TOPRIGHT", -3, -3)
+    b.dot:Hide()
+    b:SetScript("OnClick", function(_, mouse)
+        if mouse == "RightButton" then R:ToggleMiniWindow() else R:ToggleMainWindow() end
     end)
-
-    button:SetScript("OnEnter", function(selfButton)
+    b:SetScript("OnEnter", function(selfB)
         if not GameTooltip then return end
-        GameTooltip:SetOwner(selfButton, "ANCHOR_LEFT")
-        GameTooltip:SetText("GuildRadioFM", 1, 0.82, 0.25)
-        GameTooltip:AddLine("Left-click: Open player", 1, 1, 1)
-        GameTooltip:AddLine("Right-click: Options", 1, 1, 1)
-        GameTooltip:AddLine("Drag: Move icon", 0.75, 0.75, 0.75)
+        GameTooltip:SetOwner(selfB, "ANCHOR_LEFT")
+        GameTooltip:SetText("GuildRadioFM", C.acc[1], C.acc[2], C.acc[3])
+        local song = R.db.isPlaying and R:GetCurrentSong()
+        if song then GameTooltip:AddLine(song.title, 1, 1, 1) end
+        GameTooltip:AddLine("Click: open   Right-click: mini player   Drag: move", 0.6, 0.62, 0.66)
         GameTooltip:Show()
     end)
-
-    button:SetScript("OnLeave", function()
-        if GameTooltip then GameTooltip:Hide() end
+    b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    b:SetScript("OnDragStart", function() b.isDragging = true end)
+    b:SetScript("OnDragStop", function() b.isDragging = false end)
+    b:SetScript("OnUpdate", function()
+        if not b.isDragging or not Minimap then return end
+        local scale = Minimap:GetEffectiveScale()
+        local cx, cy = GetCursorPosition()
+        local mx, my = Minimap:GetCenter()
+        local dx, dy = cx / scale - mx, cy / scale - my
+        R.db.minimap.angle = math.deg(math.atan2 and math.atan2(dy, dx) or math.atan(dy, dx))
+        R:PositionMinimapButton()
     end)
-
-    local function UpdateMinimapDrag()
-        if not button.isDragging or not Minimap then return end
-        local scale = UIParent and UIParent:GetEffectiveScale() or 1
-        local cursorX, cursorY = GetCursorPosition()
-        local centerX, centerY = Minimap:GetCenter()
-        cursorX = cursorX / scale
-        cursorY = cursorY / scale
-        local deltaY = cursorY - centerY
-        local deltaX = cursorX - centerX
-        local angle = math.deg(math.atan2 and math.atan2(deltaY, deltaX) or math.atan(deltaY / math.max(0.001, deltaX)))
-        GuildRadioFM.db.minimap.angle = angle
-        GuildRadioFM:PositionMinimapButton()
-    end
-
-    button:SetScript("OnDragStart", function()
-        button.isDragging = true
-        button:SetScript("OnUpdate", UpdateMinimapDrag)
-    end)
-
-    button:SetScript("OnDragStop", function()
-        button.isDragging = false
-        button:SetScript("OnUpdate", nil)
-    end)
-
     self:UpdateMinimapButton()
+    if self.db.miniShown then self:ShowMini(true) end
 end
 
-function GuildRadioFM:UpdateOptionsPanel()
-    local panel = self.optionsPanel
-    if not panel or not self.db then return end
-    if panel.volumeText then panel.volumeText:SetText("Dialog Volume: " .. tostring(self.db.muted and 0 or self.db.volume) .. "%") end
-    if panel.volumeSlider then
-        self.suppressOptionsVolumeUpdate = true
-        panel.volumeSlider:SetValue(self.db.muted and 0 or self.db.volume)
-        self.suppressOptionsVolumeUpdate = false
-    end
-    if panel.shuffleButton then panel.shuffleButton:SetChecked(self.db.shuffle) end
-    if panel.repeatButton then panel.repeatButton:SetChecked(self.db.repeatSong) end
-    if panel.autoNextButton then panel.autoNextButton:SetChecked(self.db.autoNext) end
-    if panel.muteButton then panel.muteButton:SetChecked(self.db.muted) end
-    if panel.minimapButton then panel.minimapButton:SetChecked(not (self.db.minimap and self.db.minimap.hide)) end
-end
+-- ---------- Interface Options entry ----------
+function R:UpdateOptionsPanel() end
 
-function GuildRadioFM:BuildOptionsPanel()
-    local panel = self.optionsPanel
-    if not panel or panel.built then return end
-    panel.built = true
-
-    panel.logo = panel:CreateTexture(nil, "ARTWORK")
-    panel.logo:SetTexture(ICON_TEXTURE)
-    panel.logo:SetSize(72, 72)
-    panel.logo:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -18)
-    panel.logo:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    panel.title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    panel.title:SetPoint("TOPLEFT", panel.logo, "TOPRIGHT", 14, -6)
-    panel.title:SetText("GuildRadioFM")
-    panel.title:SetTextColor(1, 0.82, 0.25)
-
-    panel.version = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    panel.version:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -6)
-    panel.version:SetText("Core v" .. tostring(self.Version) .. " - local music library")
-    panel.version:SetTextColor(0.78, 0.72, 0.6)
-
-    panel.volumeText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    panel.volumeText:SetPoint("TOPLEFT", panel.logo, "BOTTOMLEFT", 0, -24)
-
-    panel.volumeSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
-    panel.volumeSlider:SetPoint("TOPLEFT", panel.volumeText, "BOTTOMLEFT", 0, -12)
-    panel.volumeSlider:SetWidth(260)
-    panel.volumeSlider:SetMinMaxValues(0, 100)
-    panel.volumeSlider:SetValueStep(1)
-    panel.volumeSlider:SetObeyStepOnDrag(true)
-    panel.volumeSlider.Low:SetText("0")
-    panel.volumeSlider.High:SetText("100")
-    panel.volumeSlider.Text:SetText("")
-    panel.volumeSlider:SetScript("OnValueChanged", function(_, value)
-        if GuildRadioFM.suppressOptionsVolumeUpdate then return end
-        GuildRadioFM:SetVolume(math.floor(value + 0.5))
-        GuildRadioFM:UpdateOptionsPanel()
-    end)
-
-    panel.shuffleButton = MakeCheckButton(panel, "Shuffle", function() GuildRadioFM:ToggleShuffle(); GuildRadioFM:UpdateOptionsPanel() end)
-    panel.shuffleButton:SetPoint("TOPLEFT", panel.volumeSlider, "BOTTOMLEFT", 0, -28)
-    panel.repeatButton = MakeCheckButton(panel, "Repeat current song", function() GuildRadioFM:ToggleRepeat(); GuildRadioFM:UpdateOptionsPanel() end)
-    panel.repeatButton:SetPoint("TOPLEFT", panel.shuffleButton, "BOTTOMLEFT", 0, -6)
-    panel.autoNextButton = MakeCheckButton(panel, "Auto-next", function() GuildRadioFM:ToggleAutoNext(); GuildRadioFM:UpdateOptionsPanel() end)
-    panel.autoNextButton:SetPoint("TOPLEFT", panel.repeatButton, "BOTTOMLEFT", 0, -6)
-    panel.muteButton = MakeCheckButton(panel, "Mute GuildRadioFM", function() GuildRadioFM:ToggleMute(); GuildRadioFM:UpdateOptionsPanel() end)
-    panel.muteButton:SetPoint("TOPLEFT", panel.autoNextButton, "BOTTOMLEFT", 0, -6)
-    panel.minimapButton = MakeCheckButton(panel, "Show minimap icon", function(button) GuildRadioFM:SetMinimapButtonShown(button:GetChecked()) end)
-    panel.minimapButton:SetPoint("TOPLEFT", panel.muteButton, "BOTTOMLEFT", 0, -6)
-
-    panel.openMainButton = MakeButton(panel, "Open Player", 110, 24, function() GuildRadioFM:ToggleMainWindow() end)
-    panel.openMainButton:SetPoint("TOPLEFT", panel.minimapButton, "BOTTOMLEFT", 0, -18)
-    panel.libraryButton = MakeButton(panel, "Library", 90, 24, function() GuildRadioFM:ToggleLibraryWindow() end)
-    panel.libraryButton:SetPoint("LEFT", panel.openMainButton, "RIGHT", 8, 0)
-    panel.playlistsButton = MakeButton(panel, "Playlists", 90, 24, function() GuildRadioFM:TogglePlaylistWindow() end)
-    panel.playlistsButton:SetPoint("LEFT", panel.libraryButton, "RIGHT", 8, 0)
-    panel.miniButton = MakeButton(panel, "Mini", 70, 24, function() GuildRadioFM:ToggleMiniWindow() end)
-    panel.miniButton:SetPoint("LEFT", panel.playlistsButton, "RIGHT", 8, 0)
-
-    panel.note = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    panel.note:SetPoint("TOPLEFT", panel.openMainButton, "BOTTOMLEFT", 0, -18)
-    panel.note:SetWidth(520)
-    panel.note:SetJustifyH("LEFT")
-    panel.note:SetText("GuildRadioFM is local-only. Songs must be packaged inside the addon or an optional song-pack addon. Playback uses WoW's Dialog channel.")
-    panel.note:SetTextColor(0.78, 0.72, 0.6)
-end
-
-function GuildRadioFM:CreateOptionsPanel()
+function R:CreateOptionsPanel()
     if self.optionsPanel then return end
-
     local panel = CreateFrame("Frame", "GuildRadioFMOptionsPanel")
     self.optionsPanel = panel
     panel.name = "GuildRadioFM"
-    panel:SetScript("OnShow", function()
-        GuildRadioFM:BuildOptionsPanel()
-        GuildRadioFM:UpdateOptionsPanel()
+    panel:SetScript("OnShow", function(selfP)
+        if selfP.built then return end
+        selfP.built = true
+        local logo = Text(selfP, 30, C.acc, LOGO_FONT)
+        logo:SetPoint("TOPLEFT", 16, -16)
+        logo:SetText("GuildRadio FM")
+        local note = Text(selfP, 13, C.dim)
+        note:SetPoint("TOPLEFT", logo, "BOTTOMLEFT", 4, -12)
+        note:SetText("Everything lives in the GuildRadioFM window.")
+        local open = TextButton(selfP, "Open GuildRadioFM", 150, 28, function() R:ShowTab("settings") end, "primary")
+        open:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -14)
     end)
-
     if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
         local category = Settings.RegisterCanvasLayoutCategory(panel, "GuildRadioFM")
         Settings.RegisterAddOnCategory(category)
         self.optionsCategory = category
-    elseif _G["InterfaceOptions_AddCategory"] then
-        _G["InterfaceOptions_AddCategory"](panel)
+    elseif InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(panel)
     end
 end
 
-function GuildRadioFM:OpenOptionsPanel()
-    self:CreateOptionsPanel()
-    if Settings and Settings.OpenToCategory and self.optionsCategory then
-        local categoryID = self.optionsCategory.ID
-        if not categoryID and self.optionsCategory.GetID then
-            categoryID = self.optionsCategory:GetID()
-        end
-        if categoryID and pcall(Settings.OpenToCategory, categoryID) then
-            return
-        end
-        self:ToggleSettingsWindow()
-    elseif _G["InterfaceOptionsFrame_OpenToCategory"] then
-        if not pcall(_G["InterfaceOptionsFrame_OpenToCategory"], self.optionsPanel) then
-            self:ToggleSettingsWindow()
-        end
-    else
-        self:ToggleSettingsWindow()
-    end
+function R:OpenOptionsPanel()
+    self:ShowTab("settings")
 end

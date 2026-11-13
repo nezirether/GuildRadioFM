@@ -1,0 +1,15 @@
+GuildRadioFM Forever compatibility prototype (NOT VERIFIED IN CLIENT)
+
+This is a first-pass legacy compatibility experiment, not a certified working release.
+
+1. Back up existing GuildRadioFM and its SavedVariables.
+2. Install GuildRadioFM folder into the WoW Forever Interface/AddOns directory.
+3. Enable Load out of date AddOns if necessary.
+4. Log in and run /grfm. Test UI, /grfm play, next, playlists, settings.
+5. Enable script errors: /console scriptErrors 1 then /reload.
+6. Report the FIRST error with line number, plus the client's build/interface number.
+
+Changes: experimental legacy TOC 11200; removed Retail BackdropTemplate references; C_Timer.After fallback; version marker.
+
+Known uncertainties: WoW Forever API level, MP3 support, sound handles, slider/templates, and UI functions.
+No multiplayer music streaming or arbitrary file access is implemented.

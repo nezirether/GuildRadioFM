@@ -1,17 +1,16 @@
-## Interface: 120005
+## Interface: 16001
 ## Title: GuildRadioFM
-## Notes: Local packaged music player for WoW
-## Author: GuildRadioFM
-## Version: 0.6.4
+## Notes: Guild radio with live DJ sets (GuildRadioFM Live): everyone tuned in hears the same moment.
+## Author: Nez, live sets by Noyze Komplaynt
+## Version: 2.6.3
 ## SavedVariables: GuildRadioFMDB
 
+Compat.lua
 SongList.lua
 Core.lua
-Core/Lyrics.lua
-Core/HiddenFrequency.lua
-Core/Queue.lua
-Core/Seek.lua
-Core/Sharing.lua
 Audio.lua
+NoyzeKomplaynt.lua
+JoinPoints.lua
 UI.lua
+Live.lua
 Commands.lua

@@ -9,7 +9,6 @@ Easy browser importer:
 3. Select the folder named GuildRadioFM.
 4. Click Pick MP3 Files and choose one or more songs.
 5. The importer copies the songs into Songs and updates SongList.lua.
-   It also attempts to detect MP3 duration automatically.
 6. Restart WoW or type /reload.
 
 Steps:
@@ -18,7 +17,7 @@ Steps:
    World of Warcraft/_retail_/Interface/AddOns/GuildRadioFM/Songs/
 3. Open SongList.lua in the GuildRadioFM folder.
 4. Add one line inside GuildRadioFMSongList for each song:
-   { id = "guildradiofm:my-song", title = "My Song", file = "Interface\\AddOns\\GuildRadioFM\\Songs\\My Song.mp3", duration = 142.35 },
+   { title = "My Song", file = "Interface\\AddOns\\GuildRadioFM\\Songs\\My Song.mp3" },
 5. Save SongList.lua.
 6. Fully restart WoW or type /reload.
 
@@ -28,19 +27,6 @@ Rules:
 - Do not use D:\ paths, Downloads paths, Spotify links, YouTube links, or internet URLs.
 - MP3 seeking is not available to addons.
 - Volume uses WoW's global Dialog channel.
-- Stable song id values help lyrics and future guild sync target the right track.
-- Duration is required for auto-advance, progress, and seek behavior. The importer attempts to detect it automatically.
-
-Lyrics:
-- Type /grfm lyrics test to test the Maxi Player lyric scroller.
-- Type /grfm lyrics status to check the current song.
-- Album packs can register lyrics through GuildRadioFM.RegisterSongPack.
-- Core lyric helpers live in Core\\Lyrics.lua.
-- Song entries can include lyrics as timed tables or LRC-style strings.
-
-Secret Frequency:
-- GuildRadioFM contains optional music-themed Easter eggs.
-- They do not affect normal addon use.
 
 In game:
 - Open /grfm settings.

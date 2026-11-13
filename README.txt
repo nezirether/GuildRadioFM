@@ -1,4 +1,4 @@
-GuildRadioFM v0.6.4
+GuildRadioFM v1.0.0
 
 GuildRadioFM is a local-library-only World of Warcraft addon.
 
@@ -6,14 +6,12 @@ Put packaged music files here:
 World of Warcraft/_retail_/Interface/AddOns/GuildRadioFM/Songs/
 
 Then list them in SongList.lua with title, file, and optional duration entries.
-Duration is required for auto-advance, progress, and seek behavior. The importer attempts to detect it automatically.
 
 Easy importer:
 - Open "GuildRadioFM Song Importer.html" in Chrome or Edge.
 - Choose the GuildRadioFM addon folder when asked.
 - Pick one or more MP3 files.
 - The importer copies them into Songs and updates SongList.lua.
-- The importer attempts to read MP3 duration automatically.
 - Restart WoW or type /reload after importing.
 
 Adding your own songs:
@@ -22,7 +20,7 @@ Adding your own songs:
    World of Warcraft/_retail_/Interface/AddOns/GuildRadioFM/Songs/
 3. Open SongList.lua in the GuildRadioFM folder.
 4. Add one line inside GuildRadioFMSongList for each song:
-   { id = "guildradiofm:my-song", title = "My Song", file = "Interface\\AddOns\\GuildRadioFM\\Songs\\My Song.mp3", duration = 142.35 },
+   { title = "My Song", file = "Interface\\AddOns\\GuildRadioFM\\Songs\\My Song.mp3" },
 5. Save SongList.lua.
 6. Fully restart WoW or type /reload.
 
@@ -38,87 +36,6 @@ Notes:
 - Playback uses PlaySoundFile(track.file, "Dialog").
 - Volume changes the global WoW Dialog channel.
 - MP3 seeking is not available to addons.
-- Lyrics v2 displays synced lyric lines in the Maxi Player.
-- Album packs can register timed-table lyrics or LRC-style lyric text without editing the core addon.
-- Queue v1 adds a lightweight Current Queue panel for future shared listening, guild DJ, and desktop companion features.
-- Seek Controls v1 adds restart, skip-display controls, and a seek bar framework. WoW still cannot truly seek inside MP3 playback.
-- Sharing v1 adds addon-message song metadata sharing and broadcast requests for party, raid, instance, or guild channels.
-
-Lyrics test:
-1. Install or update the addon, then restart WoW or type /reload.
-2. Type /grfm lyrics test.
-3. The Maxi Player opens and scrolls through built-in test lyrics.
-4. Type /grfm lyrics status to check whether the current track has registered lyrics.
-
-Secret Frequency:
-GuildRadioFM contains optional music-themed Easter eggs. They do not affect normal addon use.
-
-Queue:
-1. Open the library with /grfm library.
-2. Click a song once to select it.
-3. Click Play Song to play it now, or Add To Queue to place it in Current Queue.
-4. Open Current Queue with /grfm queue or the Queue button.
-5. Remove individual queued songs with Remove, or clear the list with Clear Queue.
-6. Play Next is framework-only. It prints the next queued song name and removes it from the queue for testing.
-
-Seek Controls:
-1. Play a song.
-2. Use Restart to restart the current track.
-3. Use -10 or +10 to move the displayed track position.
-4. Drag the seek bar to update the displayed track position.
-5. Slash commands also work:
-   /grfm restart
-   /grfm seek 60
-   /grfm seek +10
-   /grfm seek -10
-
-Important seek limitation:
-WoW's PlaySoundFile API does not support true MP3 seeking. These controls update GuildRadioFM's progress and lyric timing framework now, and prepare the addon for future real seeking through a desktop companion.
-
-Sharing:
-1. Join a party, raid, instance group, or guild.
-2. Play or select a song.
-3. Type /grfm share or click Share in the Maxi Player.
-4. Other GuildRadioFM users in the channel can receive the shared song metadata.
-5. Type /grfm request to broadcast a request for the current song.
-6. Open the sharing inbox with /grfm requests.
-7. Check status with /grfm share status.
-
-Important sharing limitation:
-GuildRadioFM can share song titles, artists, IDs, file paths, versions, and request metadata through WoW addon messages. It cannot send MP3 files, stream audio, or make another player hear your local playback.
-
-Album-pack lyrics example:
-GuildRadioFM.RegisterSongPack({
-    packId = "my-album",
-    packName = "My Album",
-    songs = {
-        {
-            id = "my-album:first-song",
-            title = "First Song",
-            file = "Interface\\AddOns\\MyAlbum\\Songs\\First Song.mp3",
-            duration = 180,
-            lyrics = {
-                { time = 0.0, text = "First lyric line" },
-                { time = 5.2, text = "Second lyric line" },
-                { time = 9.8, text = "Third lyric line" },
-            },
-        },
-        {
-            id = "my-album:lrc-song",
-            title = "LRC Song",
-            file = "Interface\\AddOns\\MyAlbum\\Songs\\LRC Song.mp3",
-            duration = 120,
-            lyrics = "[00:00.00]First lyric line\n[00:05.20]Second lyric line\n[00:09.80]Third lyric line",
-        },
-    },
-    lyrics = {
-        ["my-album:pack-level-song"] = {
-            { time = 0.0, text = "First lyric line" },
-            { time = 5.2, text = "Second lyric line" },
-            { time = 9.8, text = "Third lyric line" },
-        },
-    },
-})
 
 Commands:
 /grfm
@@ -129,11 +46,6 @@ Commands:
 /grfm library
 /grfm favorites
 /grfm playliked
-/grfm queue
-/grfm queue status
-/grfm queue clear
-/grfm lyrics test
-/grfm lyrics status
 /grfm playlists
 /grfm mini
 /grfm settings
@@ -170,9 +82,6 @@ Mini player:
 Library:
 - All shows every local song.
 - Liked shows only favorited songs.
-- Click a song once to select it.
-- Use Play Song to play the selected song.
-- Use Add To Queue to add the selected song to Current Queue.
 - Right-click a song in Liked view to remove it from liked songs.
 - The Unlike button removes the current song from liked songs.
 - /grfm favorites opens the library in Liked view.
@@ -183,3 +92,21 @@ Playlist controls:
 - Single-click a playlist song to select it.
 - Double-click a playlist song to play it.
 - Play starts the selected playlist song.
+
+GuildRadioFM Live (2.3+)
+One window, five tabs: Now Playing, Library, Playlists, Live, Settings. /grfm opens it, /grfm mini for the mini player.
+
+Live sets (Live tab or /grfm live):
+- Go live: you're the DJ. Everyone tuned in starts each song at the same moment as you. Nothing is streamed:
+  every player runs the same shared clock (the server's, refined to frame precision) and the DJ schedules each
+  song about a second ahead, so chat lag doesn't matter.
+- Tune in mid-song and you join at the next 30-second mark (Songs/_join holds those cuts), in time with everyone.
+- Invite guild posts a line in guild chat and pops a "Tune in" card for guildmates who have 2.3.
+- Request Line: request a song from the Live tab or the request icon in Library; asking again counts as a vote.
+  5 open requests each; waiting 3+ minutes goes first, then most votes, then oldest.
+- DJ: click a request to play it now, right-click to decline, shift-right-click to never play it this set.
+  When a song ends, the top request plays next.
+- Commands: /grfm live, /grfm dj, /grfm invite, /grfm endset, /grfm tune, /grfm tuneout, /grfm unblock
+- Everyone needs the same GuildRadioFM folder. After adding songs run: python tools/make_joins.py
+
+Noyze Komplaynt pack: Songs/Noyze Komplaynt/ (Lost in the Music).
