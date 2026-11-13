@@ -1046,12 +1046,17 @@ function R:BuildLivePage(p)
     p.qFoot:SetPoint("BOTTOMLEFT", 0, 4)
     p.qFoot:SetText("5 requests each  ·  3+ min waiting goes first, then votes")
 
-    -- request a song (right)
-    p.rHead = Eyebrow(p, "Request a song")
+    -- right column: room chat or requests
+    p.rHead = Eyebrow(p, "")
     p.rHead:SetPoint("TOPLEFT", colW + 14, -88)
+    p.chatPill = Pill(p, "Room chat", function() R.db.liveRight = "chat"; R:UpdateLive() end)
+    p.chatPill:SetPoint("TOPLEFT", colW + 14, -82)
+    p.reqPill = Pill(p, "Request a song", function() R.db.liveRight = "requests"; R:UpdateLive() end)
+    p.reqPill:SetPoint("LEFT", p.chatPill, "RIGHT", 4, 0)
     p.rSearch = Search(p, colW, "Search", function() R.db.liveLibScroll = 0; R:UpdateLive() end)
     p.rSearch:SetPoint("TOPLEFT", colW + 14, -104)
     local rh = CreateFrame("Frame", nil, p)
+    p.rh = rh
     rh:SetPoint("TOPLEFT", colW + 14, -136)
     rh:SetPoint("BOTTOMRIGHT", 0, 22)
     Fill(rh, C.surface)
@@ -1083,6 +1088,61 @@ function R:BuildLivePage(p)
     p.r:SetPoint("BOTTOMRIGHT", -1, 1)
     p.rFoot = Text(p, 10, C.faint, BODY_FONT, "RIGHT")
     p.rFoot:SetPoint("BOTTOMRIGHT", 0, 4)
+
+    -- room chat: parchment-style lines, class-colored names, one input line
+    local ch = CreateFrame("Frame", nil, p)
+    p.chat = ch
+    ch:SetPoint("TOPLEFT", colW + 14, -108)
+    ch:SetPoint("BOTTOMRIGHT", 0, 22)
+    Fill(ch, C.surface)
+    Outline(ch, C.line)
+    ch.lines = {}
+    ch.offset = 0
+    local LINES = 8
+    for i = 1, LINES do
+        local fs = Text(ch, 12, C.text)
+        fs:SetPoint("TOPLEFT", 8, -6 - (i - 1) * 19)
+        fs:SetPoint("RIGHT", ch, "RIGHT", -8, 0)
+        ch.lines[i] = fs
+    end
+    Wheel(ch, function(d) ch.offset = math.max(0, ch.offset + d); R:UpdateLive() end)
+    ch.input = CreateFrame("EditBox", nil, ch)
+    ch.input:SetHeight(24)
+    ch.input:SetPoint("BOTTOMLEFT", 1, 1)
+    ch.input:SetPoint("BOTTOMRIGHT", -1, 1)
+    ch.input:SetFont(BODY_FONT, 13, "")
+    ch.input:SetTextColor(C.text[1], C.text[2], C.text[3])
+    ch.input:SetTextInsets(8, 8, 0, 0)
+    ch.input:SetAutoFocus(false)
+    ch.input:SetMaxLetters(200)
+    Fill(ch.input, C.raised)
+    ch.input.hint = Text(ch.input, 12, C.faint)
+    ch.input.hint:SetPoint("LEFT", 8, 0)
+    ch.input.hint:SetText("Say something to the room")
+    ch.input:SetScript("OnTextChanged", function(selfB) if (selfB:GetText() or "") == "" then selfB.hint:Show() else selfB.hint:Hide() end end)
+    ch.input:SetScript("OnEnterPressed", function(selfB) EB():SendChat(selfB:GetText()); selfB:SetText(""); ch.offset = 0 end)
+    ch.input:SetScript("OnEscapePressed", function(selfB) selfB:ClearFocus() end)
+end
+
+function R:UpdateChat()
+    if not PageShown("live") then return end
+    local p = self.mainFrame.pages.live
+    local ch = p.chat
+    local eb = EB()
+    local log = eb.chatLog
+    local n = #ch.lines
+    ch.offset = math.min(ch.offset, math.max(0, #log - n))
+    local first = math.max(1, #log - n + 1 - ch.offset)
+    for i, fs in ipairs(ch.lines) do
+        local e = log[first + i - 1]
+        if e and (first + i - 1) <= #log - ch.offset then
+            if e.system then fs:SetText("|cff8c826f" .. e.text .. "|r")
+            else fs:SetText(eb:ColorName(e.who) .. "|cffbdb6a6:|r " .. e.text) end
+        else
+            fs:SetText("")
+        end
+    end
+    if #log == 0 then ch.lines[1]:SetText(eb:RoomHost() and "|cff8c826fNo messages yet.|r" or "|cff8c826fOpen a room or tune into one to chat.|r") end
 end
 
 function R:UpdateLive()
@@ -1166,8 +1226,18 @@ function R:UpdateLive()
     if eb.live then p.next:Show(); p.open:Show(); p.open:SetLabel(self.db.eb.open and "Open" or "Closed"); p.open:SetOn(self.db.eb.open)
     else p.next:Hide(); p.open:Hide() end
     p.q:Refresh()
-    p.r:Refresh()
-    p.rFoot:SetText(eb.live and "Click to add to your line" or ((eb.tuned or dj) and "Click to request" or ""))
+    local view = self.db.liveRight or "chat"
+    p.chatPill:SetOn(view == "chat")
+    p.reqPill:SetOn(view == "requests")
+    if view == "chat" then
+        p.chat:Show(); p.rSearch:Hide(); p.rh:Hide()
+        p.rFoot:SetText("Only people in this room see it")
+        self:UpdateChat()
+    else
+        p.chat:Hide(); p.rSearch:Show(); p.rh:Show()
+        p.r:Refresh()
+        p.rFoot:SetText(eb.live and "Click to add to your line" or ((eb.tuned or dj) and "Click to request" or ""))
+    end
 end
 
 -- pick a listener to take over the set
@@ -1309,6 +1379,7 @@ function R:BuildSettingsPage(p)
         { "Play the next song automatically", function() return R.db.autoNext end, function() R:ToggleAutoNext() end },
         { "Mute", function() return R.db.muted end, function() R:ToggleMute() end },
         { "Minimap icon", function() return not (R.db.minimap and R.db.minimap.hide) end, function(on) R:SetMinimapButtonShown(on) end },
+        { "Room chat in the chat window", function() return R.db.eb.chatInChat ~= false end, function(on) R.db.eb.chatInChat = on; R:RefreshAll() end },
         { "Mini player", function() return R.miniFrame and R.miniFrame:IsShown() end, function(on) R:ShowMini(on) end },
         { "Now-playing pop-up", function() return R.db.toast ~= false end, function(on) R.db.toast = on; R:RefreshAll() end },
         { "Live invites from the guild", function() return R.db.invites ~= false end, function(on) R.db.invites = on; R:RefreshAll() end },

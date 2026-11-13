@@ -15,7 +15,7 @@
 -- The window lives in UI.lua (Live tab); this file is the engine.
 
 local R = GuildRadioFM
-local EB = { djs = {}, queue = {}, listeners = {}, listenerFull = {}, remoteBy = {}, remote = { list = {}, open = true }, peers = {}, invited = {} }
+local EB = { djs = {}, queue = {}, listeners = {}, listenerFull = {}, remoteBy = {}, remote = { list = {}, open = true }, peers = {}, invited = {}, chatLog = {}, classOf = {} }
 R.Live = EB
 
 local PREFIX = "GRFM_EB"
@@ -250,6 +250,8 @@ function EB:GoLive()
     self.queue = {}
     self.listeners = {}
     self.listenerCount = 0
+    self:ClearChat()
+    self:AddChat(nil, self:RoomName() .. " is open.", true)
     if not R.db.isPlaying then self.songStart = 0 end
     R:Print(self:RoomName() .. " is open. Invite guildmates from the Live tab.")
     self:Heartbeat()
@@ -342,7 +344,9 @@ function EB:TuneIn(dj)
     if self.live then self:EndSet() end
     pending = nil
     origStop(R)
+    if self.tuned ~= dj.full then self:ClearChat() end
     self.tuned = dj.full
+    self:AddChat(nil, "You joined " .. (dj.room or (dj.name .. "'s Room")) .. ".", true)
     Send("TU", "WHISPER", dj.full)
     R:Print("Tuned in to " .. dj.name .. ".")
     if dj.key ~= "" and (dj.start or 0) > 0 then self:RemotePlay(dj.key, dj.start) else self.waiting = true; Changed() end
@@ -510,6 +514,53 @@ function EB:InviteOne(full)
     Changed()
 end
 
+-- ---------- room chat ----------
+-- Only people in the room see it: messages go out tagged with the host's name and everyone else
+-- ignores them. The last 50 lines are kept until you leave the room.
+local CHAT_MAX = 50
+function EB:RoomHost()
+    if self.live then return Me() end
+    if self.tuned then return Short(self.tuned) end
+end
+
+function EB:AddChat(who, text, system)
+    local log = self.chatLog
+    log[#log + 1] = { who = who, text = text, system = system, at = Now() }
+    while #log > CHAT_MAX do table.remove(log, 1) end
+    if not system and R.db.eb.chatInChat ~= false and who ~= Me() then
+        local room = self.live and self:RoomName() or ((self.djs[self.tuned or ""] or {}).room or "Room")
+        print("|cffffb030[" .. room .. "]|r " .. self:ColorName(who) .. ": " .. text)
+    end
+    Changed()
+end
+
+function EB:ClearChat() self.chatLog = {} end
+
+function EB:ColorName(name)
+    local cf = self.classOf[name]
+    if not cf and GetNumGuildMembers then
+        for i = 1, GetNumGuildMembers() do
+            local full, _, _, _, _, _, _, _, _, _, classFile = GetGuildRosterInfo(i)
+            if full and classFile then self.classOf[Short(full)] = classFile end
+        end
+        cf = self.classOf[name]
+    end
+    local c = cf and RAID_CLASS_COLORS and RAID_CLASS_COLORS[cf]
+    if c then return string.format("|cff%02x%02x%02x%s|r", math.floor(c.r * 255 + 0.5), math.floor(c.g * 255 + 0.5), math.floor(c.b * 255 + 0.5), name) end
+    return "|cffffd200" .. name .. "|r"
+end
+
+function EB:SendChat(text)
+    text = string.gsub(text or "", "|", "")
+    text = strtrim and strtrim(text) or text
+    if text == "" then return end
+    local host = self:RoomHost()
+    if not host then return R:Print("Open a room or tune into one to chat.") end
+    text = string.sub(text, 1, 200)
+    Send("CH~" .. host .. "~" .. text, "GUILD")
+    self:AddChat(Me(), text)
+end
+
 -- ---------- wire ----------
 local function Split(msg)
     local out = {}
@@ -520,6 +571,11 @@ end
 function EB:OnMessage(msg, channel, sender)
     if Short(sender) == Me() then return end
     self.peers[Short(sender)] = true
+    local chatHost, chatText = string.match(msg, "^CH~([^~]*)~(.*)$")
+    if chatHost then
+        if chatHost == self:RoomHost() then self:AddChat(Short(sender), chatText) end
+        return
+    end
     local f = Split(msg)
     local op = f[1]
     if op == "NP" or op == "LV" then
@@ -564,8 +620,12 @@ function EB:OnMessage(msg, channel, sender)
         self.peers[Short(sender)] = true
         if self.live then self:Heartbeat(); self:BroadcastQueue() end
     elseif op == "TU" then
-        if self.live then self.listeners[Short(sender)] = Now(); self.listenerFull[Short(sender)] = sender end
+        if self.live then
+            if not self.listeners[Short(sender)] then self:AddChat(nil, Short(sender) .. " joined.", true) end
+            self.listeners[Short(sender)] = Now(); self.listenerFull[Short(sender)] = sender
+        end
     elseif op == "TO" then
+        if self.live and self.listeners[Short(sender)] then self:AddChat(nil, Short(sender) .. " left.", true) end
         self.listeners[Short(sender)] = nil
     elseif op == "HOF" then
         -- our DJ wants to hand us the set
