@@ -15,7 +15,7 @@
 -- The window lives in UI.lua (Live tab); this file is the engine.
 
 local R = GuildRadioFM
-local EB = { djs = {}, queue = {}, listeners = {}, listenerFull = {}, remoteBy = {}, remote = { list = {}, open = true } }
+local EB = { djs = {}, queue = {}, listeners = {}, listenerFull = {}, remoteBy = {}, remote = { list = {}, open = true }, peers = {}, invited = {} }
 R.Live = EB
 
 local PREFIX = "GRFM_EB"
@@ -82,6 +82,19 @@ function EB:TitleOf(key)
 end
 
 local function Fmt(t) return string.format("%.3f", t) end
+
+-- every live DJ hosts a named room ("Healmode's Room" unless renamed)
+local function Clean(s) return (string.gsub(s or "", "[~|,:]", "")) end
+function EB:RoomName()
+    local n = R.db.eb.roomName
+    if not n or n == "" then n = (UnitName("player") or "My") .. "'s Room" end
+    return Clean(n)
+end
+function EB:SetRoomName(name)
+    name = Clean(strtrim and strtrim(name or "") or name or "")
+    R.db.eb.roomName = name ~= "" and string.sub(name, 1, 32) or nil
+    if self.live then self:Heartbeat() end
+end
 
 local function Changed()
     if R.UpdateLive then R:UpdateLive() end
@@ -227,7 +240,7 @@ function EB:Heartbeat()
         if t - seen > DJ_TIMEOUT then self.listeners[name] = nil else count = count + 1 end
     end
     self.listenerCount = count
-    Send("LV~" .. (song and KeyOf(song) or "") .. "~" .. Fmt(self.songStart or 0) .. "~" .. count, "GUILD")
+    Send("LV~" .. (song and KeyOf(song) or "") .. "~" .. Fmt(self.songStart or 0) .. "~" .. count .. "~" .. self:RoomName(), "GUILD")
 end
 
 function EB:GoLive()
@@ -238,7 +251,7 @@ function EB:GoLive()
     self.listeners = {}
     self.listenerCount = 0
     if not R.db.isPlaying then self.songStart = 0 end
-    R:Print("You're live. Guildmates can tune in and send requests.")
+    R:Print(self:RoomName() .. " is open. Invite guildmates from the Live tab.")
     self:Heartbeat()
     self:BroadcastQueue()
 end
@@ -247,7 +260,7 @@ function EB:EndSet()
     if not self.live then return end
     self.live = false
     Send("END", "GUILD")
-    R:Print("Set ended.")
+    R:Print("Room closed.")
     Changed()
 end
 
@@ -255,9 +268,9 @@ function EB:Announce()
     if not self.live then return end
     local song = R.db.isPlaying and R:GetCurrentSong()
     if SendChatMessage and IsInGuild() then
-        SendChatMessage("I'm live on GuildRadioFM" .. (song and (" playing " .. song.title) or "") .. ". Type /grfm tune to listen.", "GUILD")
+        SendChatMessage(self:RoomName() .. " is open on GuildRadioFM" .. (song and (", playing " .. song.title) or "") .. ". Type /grfm tune to listen.", "GUILD")
     end
-    Send("INV", "GUILD")
+    Send("INV~" .. self:RoomName(), "GUILD")
 end
 
 -- ---------- listener side ----------
@@ -394,7 +407,7 @@ function EB:OfferHost(name)
     self.offerTo = name
     self.offerAt = Now()
     Send("HOF", "WHISPER", full)
-    R:Print("Asked " .. name .. " to take over the set.")
+    R:Print("Asked " .. name .. " to host the room.")
     Changed()
 end
 
@@ -440,7 +453,7 @@ function EB:OnHandoff(oldFull, newFull, inherit)
         end
         self.songStart = old and old.start or 0
         self.waiting = false
-        R:Print(Short(oldFull) .. " passed you the set. You're on air.")
+        R:Print(Short(oldFull) .. " made you the host. You're on air.")
         self:Heartbeat()
         self:BroadcastQueue()
     else
@@ -451,9 +464,49 @@ function EB:OnHandoff(oldFull, newFull, inherit)
         if self.tuned == oldFull then
             self.tuned = newFull
             Send("TU", "WHISPER", newFull)
-            R:Print(Short(oldFull) .. " passed the set to " .. Short(newFull) .. ". Still in sync.")
+            R:Print(Short(newFull) .. " is hosting now. Still in sync.")
         end
     end
+    Changed()
+end
+
+-- ---------- inviting guildmates ----------
+-- ask who in the guild runs GuildRadioFM (they whisper back "ME"), so invites can pop a card for them
+function EB:FindPeers()
+    Send("WHO", "GUILD")
+    if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() elseif GuildRoster then GuildRoster() end
+end
+
+-- online guildmates: { full, name, level, class, zone, hasRadio }
+function EB:OnlineGuildmates()
+    local out = {}
+    if not IsInGuild() or not GetNumGuildMembers then return out end
+    local me = Me()
+    for i = 1, GetNumGuildMembers() do
+        local full, _, _, level, class, zone, _, _, online = GetGuildRosterInfo(i)
+        if full and online and Short(full) ~= me then
+            out[#out + 1] = { full = full, name = Short(full), level = level or 0, class = class or "", zone = zone or "", hasRadio = self.peers[Short(full)] }
+        end
+    end
+    table.sort(out, function(a, b)
+        if (a.hasRadio and 1 or 0) ~= (b.hasRadio and 1 or 0) then return a.hasRadio and true or false end
+        return a.name < b.name
+    end)
+    return out
+end
+
+-- invite one guildmate: a Tune in card if they have GuildRadioFM, otherwise a plain whisper
+function EB:InviteOne(full)
+    if not self.live then self:GoLive() end
+    if not self.live then return end
+    local name = Short(full)
+    if self.peers[name] then
+        Send("INV~" .. self:RoomName(), "WHISPER", full)
+    elseif SendChatMessage then
+        SendChatMessage("Come hang in " .. self:RoomName() .. " on GuildRadioFM. Get GuildRadioFM from the guild, then type /grfm tune.", "WHISPER", nil, full)
+    end
+    self.invited[name] = Now()
+    R:Print("Invited " .. name .. " to " .. self:RoomName() .. ".")
     Changed()
 end
 
@@ -466,10 +519,12 @@ end
 
 function EB:OnMessage(msg, channel, sender)
     if Short(sender) == Me() then return end
+    self.peers[Short(sender)] = true
     local f = Split(msg)
     local op = f[1]
     if op == "NP" or op == "LV" then
         local d = self.djs[sender] or { full = sender, name = Short(sender) }
+        d.room = d.room or (Short(sender) .. "'s Room")
         local isNew = not self.djs[sender]
         self.djs[sender] = d
         d.seen = Now()
@@ -478,12 +533,14 @@ function EB:OnMessage(msg, channel, sender)
             if self.tuned == sender then self:RemotePlay(d.key, d.start) end
         else
             d.key, d.start, d.count = f[2] or "", tonumber(f[3]) or 0, tonumber(f[4]) or 0
+            if f[5] and f[5] ~= "" then d.room = f[5] end
             if self.tuned == sender then Send("TU", "WHISPER", sender) end
         end
-        if isNew and not self.tuned and not self.live and not self.handingOff then R:Print(d.name .. " is live on GuildRadioFM. /grfm tune to listen.") end
+        if isNew and not self.tuned and not self.live and not self.handingOff then R:Print(d.name .. " opened " .. d.room .. " on GuildRadioFM. /grfm tune to listen.") end
         Changed()
     elseif op == "INV" then
-        if not self.tuned and not self.live and R.ShowInvite then R:ShowInvite(Short(sender)) end
+        self.peers[Short(sender)] = true
+        if not self.tuned and not self.live and R.ShowInvite then R:ShowInvite(Short(sender), f[2] ~= "" and f[2] or nil) end
     elseif op == "ST" then
         local d = self.djs[sender]
         if d then d.key = ""; d.start = 0 end
@@ -492,12 +549,19 @@ function EB:OnMessage(msg, channel, sender)
     elseif op == "END" then
         self.djs[sender] = nil
         if self.tuned == sender then
-            R:Print(Short(sender) .. " ended the set.")
+            R:Print(Short(sender) .. " closed the room.")
             self.tuned = nil
             self.waiting = false
         end
         Changed()
+    elseif op == "WHO" then
+        Send("ME", "WHISPER", sender)
+        self.peers[Short(sender)] = true
+    elseif op == "ME" then
+        self.peers[Short(sender)] = true
+        Changed()
     elseif op == "HI" then
+        self.peers[Short(sender)] = true
         if self.live then self:Heartbeat(); self:BroadcastQueue() end
     elseif op == "TU" then
         if self.live then self.listeners[Short(sender)] = Now(); self.listenerFull[Short(sender)] = sender end

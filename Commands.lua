@@ -16,7 +16,7 @@ function GuildRadioFM:ShowHelp()
     self:Print("/grfm shuffle, /grfm repeat, /grfm autonext, /grfm mute, /grfm favorite, /grfm unlike")
     self:Print("/grfm favorites, /grfm playliked")
     self:Print("/grfm volume 50, /grfm v 50, /grfm song 1, /grfm reset")
-    self:Print("Live sets: /grfm live (window), /grfm dj, /grfm invite, /grfm pass <name>, /grfm endset, /grfm tune, /grfm tuneout, /grfm unblock")
+    self:Print("Rooms: /grfm live (window), /grfm dj (open a room), /grfm room <name>, /grfm invite (whole guild), /grfm invite <name>, /grfm pass <name>, /grfm endset, /grfm tune, /grfm tuneout, /grfm unblock")
 end
 
 SlashCmdList["GUILDRADIOFM"] = function(message)
@@ -49,6 +49,10 @@ SlashCmdList["GUILDRADIOFM"] = function(message)
     if lower == "golive" or lower == "dj" then GuildRadioFM.Live:GoLive() return end
     local passTo = string.match(raw, "^[Pp][Aa][Ss][Ss]%s+(%S+)$")
     if passTo then GuildRadioFM.Live:OfferHost(passTo) return end
+    local roomName = string.match(raw, "^[Rr][Oo][Oo][Mm]%s+(.+)$")
+    if roomName then GuildRadioFM.Live:SetRoomName(roomName); GuildRadioFM:Print("Room name: " .. GuildRadioFM.Live:RoomName()); GuildRadioFM:RefreshAll() return end
+    local inviteWho = string.match(raw, "^[Ii][Nn][Vv][Ii][Tt][Ee]%s+(%S+)$")
+    if inviteWho then GuildRadioFM.Live:InviteOne(inviteWho) return end
     if lower == "invite" then GuildRadioFM.Live:Announce() return end
     if lower == "endset" then GuildRadioFM.Live:EndSet() return end
     if lower == "tune" or lower == "tunein" then GuildRadioFM.Live:TuneIn() return end

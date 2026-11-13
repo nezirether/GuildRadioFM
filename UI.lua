@@ -645,7 +645,7 @@ function R:UpdateNowPage()
     local sub
     if eb and eb.missing then sub = "You don't have this song. Get the latest GuildRadioFM from your DJ."
     elseif eb and eb.waiting then sub = "Tuned in. You'll join at the next song."
-    elseif eb and eb:JoiningIn() then sub = string.format("Joining in %ds, right in time with the set", math.ceil(eb:JoiningIn()))
+    elseif eb and eb:JoiningIn() then sub = string.format("Joining in %ds, right in time with the room", math.ceil(eb:JoiningIn()))
     else
         sub = song and (song.artist or (song.id and string.match(song.id, "^noyze") and "Noyze Komplaynt") or "Guild library") or "Add songs in SongList.lua"
         if song then sub = sub .. "  ·  " .. index .. " of " .. self:GetSongCount() end
@@ -667,7 +667,7 @@ function R:UpdateNowPage()
         local d = eb.tuned and eb.djs[eb.tuned] or dj
         local name = d and d.name or eb.Short(eb.tuned)
         local count = d and d.count or 0
-        p.banner.text:SetText(eb.tuned and ("Listening with " .. name .. "  ·  " .. count .. " tuned in") or (name .. " is live  ·  " .. count .. " tuned in"))
+        p.banner.text:SetText(eb.tuned and ("In " .. (d and d.room or (name .. "'s Room")) .. "  ·  " .. count .. " tuned in") or ((d and d.room or (name .. "'s Room")) .. " is open  ·  " .. count .. " tuned in"))
         p.banner.btn:SetLabel(eb.tuned and "Tune out" or "Tune in")
         p.banner.btn:SetStyle(eb.tuned and "ghost" or "primary")
         p.banner:Show()
@@ -742,7 +742,7 @@ function R:BuildLibraryPage(p)
         row.title:SetPoint("LEFT", 38, 0)
         row.dur = Text(row, 11, C.faint, BODY_FONT, "RIGHT")
         row.req = IconButton(row, "live", 14, function(b) EB():Request(EB().KeyOf(b:GetParent().item.song)) end,
-            function() local eb = EB(); return eb.live and "Add to your Request Line" or "Request on the live set" end, 26)
+            function() local eb = EB(); return eb.live and "Add to your Request Line" or "Request in the room" end, 26)
         row.add = IconButton(row, "plus", 12, function(b) R:AddSongToSelectedPlaylist(b:GetParent().item.index) end,
             function() local pl = R:GetSelectedPlaylist(); return pl and not pl.runtime and ("Add to " .. pl.name) or "Make a playlist first" end, 26)
         row.like = IconButton(row, "heartline", 13, function(b) R:ToggleFavorite(b:GetParent().item.index) end, "Like", 26)
@@ -926,7 +926,7 @@ function R:BuildLivePage(p)
     card.title:SetPoint("TOPLEFT", 58, -16)
     card.sub = Text(card, 12, C.dim)
     card.sub:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -6)
-    card.main = TextButton(card, "Go live", 96, 28, function()
+    card.main = TextButton(card, "Open room", 96, 28, function()
         local eb = EB()
         if eb.live then eb:EndSet() else eb:GoLive() end
     end, "primary")
@@ -936,14 +936,39 @@ function R:BuildLivePage(p)
         if eb.tuned then eb:TuneOut() else eb:TuneIn() end
     end, "ghost")
     card.tune:SetPoint("RIGHT", card.main, "LEFT", -8, 0)
-    card.invite = TextButton(card, "Invite", 66, 28, function() EB():Announce() end, "ghost")
+    card.invite = TextButton(card, "Invite", 66, 28, function(b) R:ToggleInviteMenu(b) end, "ghost")
     card.invite:SetPoint("RIGHT", card.main, "LEFT", -8, 0)
+    -- room name: click it (host only) to rename
+    card.rename = CreateFrame("EditBox", nil, card)
+    card.rename:SetFont(TITLE_FONT, 16, "")
+    card.rename:SetTextColor(C.text[1], C.text[2], C.text[3])
+    card.rename:SetAutoFocus(false)
+    card.rename:SetMaxLetters(32)
+    card.rename:SetHeight(22)
+    card.rename:SetPoint("TOPLEFT", 58, -12)
+    card.rename:SetWidth(220)
+    Fill(card.rename, C.raised)
+    card.rename:Hide()
+    card.rename:SetScript("OnEnterPressed", function(selfB) EB():SetRoomName(selfB:GetText()); selfB:ClearFocus(); selfB:Hide(); R:UpdateLive() end)
+    card.rename:SetScript("OnEscapePressed", function(selfB) selfB:ClearFocus(); selfB:Hide(); R:UpdateLive() end)
+    card.titleHit = CreateFrame("Button", nil, card)
+    card.titleHit:SetPoint("TOPLEFT", card.title, "TOPLEFT")
+    card.titleHit:SetPoint("BOTTOMRIGHT", card.title, "BOTTOMRIGHT")
+    function card.titleHit:Hover(h) if EB().live then SetColor(card.title, h and C.acc or C.text) end end
+    Tip(card.titleHit, function() return EB().live and "Click to rename your room" or nil end)
+    card.titleHit:SetScript("OnClick", function()
+        if not EB().live then return end
+        card.rename:SetText(EB():RoomName())
+        card.rename:Show()
+        card.rename:SetFocus()
+        card.rename:HighlightText()
+    end)
     card.pass = TextButton(card, "Pass host", 82, 28, function(b) R:TogglePassMenu(b) end, "ghost")
     card.pass:SetPoint("RIGHT", card.invite, "LEFT", -6, 0)
     -- other live sets, as pills under the title
     card.sets = {}
     for i = 1, 3 do
-        local pill = Pill(card, "Set", function(b) local eb = EB(); if b.full then eb.focus = b.full; eb:TuneIn(b.full) end end)
+        local pill = Pill(card, "Room", function(b) local eb = EB(); if b.full then eb.focus = b.full; eb:TuneIn(b.full) end end)
         pill:Hide()
         card.sets[i] = pill
     end
@@ -1078,12 +1103,12 @@ function R:UpdateLive()
     local song = self.db.isPlaying and self:GetCurrentSong()
     if eb.live then
         card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
-        card.title:SetText("On air" .. (song and ("  ·  " .. song.title) or ""))
-        card.sub:SetText((eb.listenerCount or 0) .. " tuned in  ·  requests " .. (self.db.eb.open and "open" or "closed") .. (song and "" or "  ·  play a song to start"))
+        card.title:SetText(eb:RoomName())
+        card.sub:SetText("On air" .. (song and ("  ·  " .. song.title) or "") .. "  ·  " .. (eb.listenerCount or 0) .. " tuned in  ·  requests " .. (self.db.eb.open and "open" or "closed") .. (song and "" or "  ·  play a song to start"))
     elseif eb.tuned then
         local d = eb.djs[eb.tuned]
         card.icon:SetVertexColor(C.acc2[1], C.acc2[2], C.acc2[3])
-        card.title:SetText("Listening with " .. eb.Short(eb.tuned) .. (d and d.key ~= "" and ("  ·  " .. eb:TitleOf(d.key)) or ""))
+        card.title:SetText((d and d.room or (eb.Short(eb.tuned) .. "'s Room")) .. (d and d.key ~= "" and ("  ·  " .. eb:TitleOf(d.key)) or ""))
         local j = eb:JoiningIn()
         card.sub:SetText(eb.missing and "|cffffb030You don't have this song. Get the latest GuildRadioFM from the DJ.|r"
             or (j and string.format("Joining in %ds, in time with everyone", math.ceil(j)))
@@ -1092,12 +1117,12 @@ function R:UpdateLive()
         dj = eb:FocusDJ() or dj
         card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
         local n = #eb:LiveSets()
-        card.title:SetText(n > 1 and (n .. " sets live, pick one") or (dj.name .. " is live" .. (dj.key ~= "" and ("  ·  " .. eb:TitleOf(dj.key)) or "")))
-        card.sub:SetText((dj.count or 0) .. " tuned in. Tune in to hear the set in sync.")
+        card.title:SetText(n > 1 and (n .. " rooms open, pick one") or ((dj.room or dj.name) .. (dj.key ~= "" and ("  ·  " .. eb:TitleOf(dj.key)) or "")))
+        card.sub:SetText("Hosted by " .. dj.name .. "  ·  " .. (dj.count or 0) .. " tuned in. Tune in to hear it in sync.")
     else
         card.icon:SetVertexColor(C.faint[1], C.faint[2], C.faint[3])
-        card.title:SetText("Nobody is live")
-        card.sub:SetText("Go live to DJ for the guild. Everyone tuned in hears the same moment.")
+        card.title:SetText("No rooms open")
+        card.sub:SetText("Open a room, invite guildmates, and everyone in it hears the same moment.")
     end
     -- several sets live: show them as pills (not while you're the host)
     local sets = eb:LiveSets()
@@ -1106,7 +1131,7 @@ function R:UpdateLive()
         local d = sets[i]
         if d and not eb.live and #sets > 1 then
             pill.full = d.full
-            pill:SetLabel(d.name .. "  ·  " .. (d.count or 0))
+            pill:SetLabel((d.room or d.name) .. "  ·  " .. (d.count or 0))
             pill:SetWidth(pill.label:GetStringWidth() + 22)
             pill:SetOn(eb.tuned == d.full)
             pill:ClearAllPoints()
@@ -1127,12 +1152,15 @@ function R:UpdateLive()
         card.pass:Hide()
         if self.passMenu then self.passMenu:Hide() end
     end
-    card.main:SetLabel(eb.live and "End set" or "Go live")
+    card.main:SetLabel(eb.live and "Close room" or "Open room")
     card.main:SetStyle(eb.live and "danger" or "primary")
     card.tune:SetLabel(eb.tuned and "Tune out" or "Tune in")
-    if eb.live then card.tune:Hide(); card.invite:Show()
+    card.invite:Show()
+    card.invite:ClearAllPoints()
+    if eb.live then card.tune:Hide(); card.invite:SetPoint("RIGHT", card.main, "LEFT", -8, 0)
     else
-        card.invite:Hide(); card.tune:Show()
+        card.tune:Show()
+        card.invite:SetPoint("RIGHT", card.tune, "LEFT", -6, 0)
         card.tune:SetDisabledLook(not (dj or eb.tuned))
     end
     if eb.live then p.next:Show(); p.open:Show(); p.open:SetLabel(self.db.eb.open and "Open" or "Closed"); p.open:SetOn(self.db.eb.open)
@@ -1153,7 +1181,7 @@ function R:TogglePassMenu(anchor)
         Fill(m, C.bg)
         Outline(m, C.acc, 0.35)
         m:EnableMouse(true)
-        m.head = Eyebrow(m, "Hand the set to")
+        m.head = Eyebrow(m, "Make host")
         m.head:SetPoint("TOPLEFT", 10, -8)
         m.rows = {}
         for i = 1, 8 do
@@ -1181,6 +1209,96 @@ function R:TogglePassMenu(anchor)
     m:ClearAllPoints()
     m:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -4)
     m:Show()
+end
+
+-- invite guildmates to your room: whole guild, or pick people (online now)
+function R:ToggleInviteMenu(anchor)
+    local eb = EB()
+    if not self.inviteMenu then
+        local m = CreateFrame("Frame", nil, self.mainFrame)
+        m:SetFrameLevel(self.mainFrame:GetFrameLevel() + 20)
+        m:SetWidth(260)
+        Fill(m, C.bg)
+        Outline(m, C.acc, 0.35)
+        m:EnableMouse(true)
+        m.head = Eyebrow(m, "Invite to your room")
+        m.head:SetPoint("TOPLEFT", 10, -8)
+        m.rows = {}
+        m.offset = 0
+        for i = 1, 11 do
+            local r = CreateFrame("Button", nil, m)
+            r:SetHeight(24)
+            r:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 24)
+            r:SetPoint("TOPRIGHT", -4, -22 - (i - 1) * 24)
+            r.hl = Fill(r, C.text, 0)
+            r.label = Text(r, 13, C.text)
+            r.label:SetPoint("LEFT", 8, 0)
+            r.meta = Text(r, 10, C.faint, BODY_FONT, "RIGHT")
+            r.meta:SetPoint("RIGHT", -8, 0)
+            r.label:SetPoint("RIGHT", r.meta, "LEFT", -6, 0)
+            function r:Hover(h) self.hl:SetAlpha(h and 0.06 or 0) end
+            Tip(r, nil)
+            r:SetScript("OnClick", function(selfR)
+                if selfR.everyone then EB():Announce(); if not EB().live then EB():GoLive(); EB():Announce() end; m:Hide()
+                elseif selfR.full then EB():InviteOne(selfR.full); R:FillInviteMenu() end
+            end)
+            Wheel(r, function(d) m.offset = math.max(0, m.offset - d); R:FillInviteMenu() end)
+            m.rows[i] = r
+        end
+        Wheel(m, function(d) m.offset = math.max(0, m.offset - d); R:FillInviteMenu() end)
+        self.inviteMenu = m
+    end
+    local m = self.inviteMenu
+    if m:IsShown() then m:Hide(); return end
+    if self.passMenu then self.passMenu:Hide() end
+    eb:FindPeers()
+    m.offset = 0
+    m:ClearAllPoints()
+    m:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -4)
+    m:Show()
+    self:FillInviteMenu()
+    if C_Timer and C_Timer.After then C_Timer.After(1.5, function() if m:IsShown() then R:FillInviteMenu() end end) end
+end
+
+function R:FillInviteMenu()
+    local m = self.inviteMenu
+    if not m or not m:IsShown() then return end
+    local eb = EB()
+    local mates = eb:OnlineGuildmates()
+    local items = { { everyone = true } }
+    for _, g in ipairs(mates) do items[#items + 1] = g end
+    m.offset = math.min(m.offset, math.max(0, #items - #m.rows))
+    local shown = 0
+    for i, r in ipairs(m.rows) do
+        local it = items[i + m.offset]
+        r.everyone, r.full = nil, nil
+        if it then
+            shown = shown + 1
+            if it.everyone then
+                r.everyone = true
+                r.label:SetText("Whole guild")
+                SetColor(r.label, C.acc)
+                r.meta:SetText(#mates .. " online  ·  posts in guild chat")
+            else
+                r.full = it.full
+                local invited = eb.invited[it.name] and (eb.Now() - eb.invited[it.name] < 120)
+                r.label:SetText(it.name)
+                SetColor(r.label, invited and C.faint or C.text)
+                r.meta:SetText(invited and "invited" or (it.level .. "  ·  " .. it.zone .. (it.hasRadio and "  ·  has radio" or "")))
+            end
+            r:Show()
+        else
+            r:Hide()
+        end
+    end
+    if #mates == 0 then
+        m.rows[2]:Show()
+        m.rows[2].label:SetText(IsInGuild() and "Nobody else is online" or "Join a guild to invite people")
+        SetColor(m.rows[2].label, C.faint)
+        m.rows[2].meta:SetText("")
+        shown = 2
+    end
+    m:SetHeight(30 + shown * 24)
 end
 
 -- ---------- Settings ----------
@@ -1251,7 +1369,7 @@ function R:BuildSettingsPage(p)
     p.add:SetPoint("RIGHT", p, "RIGHT", 0, 0)
     p.add:SetSpacing(3)
     p.add:SetText("Put MP3s in GuildRadioFM\\Songs and list them in SongList.lua (or use the Song Importer page in the addon folder), then /reload. "
-        .. "For live sets, everyone needs the same songs, so share one GuildRadioFM zip with the guild. After adding songs, run tools\\make_joins.py so late listeners can join mid-song.")
+        .. "For rooms, everyone needs the same songs, so share one GuildRadioFM zip with the guild. After adding songs, run tools\\make_joins.py so late listeners can join mid-song.")
 
     p.credits = Text(p, 11, C.faint)
     p.credits:SetPoint("BOTTOMLEFT", 0, 0)
@@ -1393,7 +1511,7 @@ function R:ShowNowPlayingToast(song)
     t:Show()
 end
 
-function R:ShowInvite(name)
+function R:ShowInvite(name, room)
     if self.db and self.db.invites == false then return end
     if not self.inviteFrame then
         local t = Card("GuildRadioFMInviteFrame", 340)
@@ -1409,7 +1527,7 @@ function R:ShowInvite(name)
     local t = self.inviteFrame
     t.eyebrow:SetText("LIVE ON GUILDRADIOFM")
     SetColor(t.eyebrow, C.live)
-    t.title:SetText(name .. " started a set")
+    t.title:SetText(name .. " invited you to " .. (room or (name .. "'s Room")))
     t.life, t.hold = 0, 14
     t:Show()
 end
@@ -1426,7 +1544,7 @@ function R:ShowHandoff(from)
         self.handoffFrame = t
     end
     local t = self.handoffFrame
-    t.eyebrow:SetText("PASS THE SET")
+    t.eyebrow:SetText("HOST THE ROOM")
     SetColor(t.eyebrow, C.acc)
     t.title:SetText(from .. " wants you to host")
     t.life, t.hold = 0, 25
