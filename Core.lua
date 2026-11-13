@@ -2,17 +2,10 @@ GuildRadioFM = GuildRadioFM or {}
 GuildRadioFM.version = "2.1.2-forever-prototype"
 GuildRadioFM.soundChannel = "Dialog"
 
-local BUILD_OWNER = { 81, 104, 125 }
-local BUILD_TRACE = { 74, 120, 108, 111, 103, 85, 100, 103, 108, 114, 73, 80, 61, 61, 81, 104, 125, 61, 61, 111, 114, 102, 100, 111, 48, 111, 108, 101, 117, 100, 117, 124, 48, 114, 113, 111, 124, 61, 61, 53, 51, 53, 57, 48, 51, 56, 48, 53, 59 }
-local BUILD_NOTE = { 69, 120, 108, 111, 119, 35, 105, 114, 117, 35, 81, 104, 125, 49, 35, 76, 105, 35, 105, 114, 120, 113, 103, 35, 108, 113, 35, 119, 107, 104, 35, 122, 108, 111, 103, 47, 35, 119, 107, 104, 35, 112, 120, 118, 108, 102, 35, 118, 119, 108, 111, 111, 35, 117, 104, 112, 104, 112, 101, 104, 117, 118, 35, 122, 107, 114, 35, 119, 120, 113, 104, 103, 35, 119, 107, 104, 35, 103, 108, 100, 111, 49 }
-
-local function DecodeBuildMark(values)
-    local out = {}
-    for i, value in ipairs(values) do
-        out[i] = string.char(value - 3)
-    end
-    return table.concat(out)
-end
+-- Credit, in plain text (Blizzard's add-on policy: no hidden or obfuscated code).
+local BUILD_OWNER = "Nez"
+local BUILD_TRACE = "GuildRadioFM::Nez::local-library-only::2026-05-28"
+local BUILD_NOTE = "Built for Nez. If found in the wild, the music still remembers who tuned the dial."
 
 -- Local library rebuild note: keep this addon intentionally offline and packaged-only.
 local defaults = {
@@ -70,7 +63,7 @@ function GuildRadioFM:Print(message)
 end
 
 function GuildRadioFM:GetSignature()
-    return DecodeBuildMark(BUILD_TRACE)
+    return BUILD_TRACE
 end
 
 local function TrimValue(value)
@@ -87,9 +80,9 @@ local function SongKey(song)
 end
 
 function GuildRadioFM:ShowSignature()
-    self:Print("Owner tag: " .. DecodeBuildMark(BUILD_OWNER))
+    self:Print("Owner tag: " .. BUILD_OWNER)
     self:Print("Signature: " .. tostring(self:GetSignature()))
-    self:Print(DecodeBuildMark(BUILD_NOTE))
+    self:Print(BUILD_NOTE)
 end
 
 function GuildRadioFM:RebuildSongLibrary()
