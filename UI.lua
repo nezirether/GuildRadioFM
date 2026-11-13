@@ -854,6 +854,91 @@ function R:BuildPlaylistPage(p)
     p.clear:SetPoint("RIGHT", p.del, "LEFT", -6, 0)
     p.playAll = TextButton(right, "Play", 64, 24, function() R:PlayPlaylistEntry(R.db.playlistEntryIndex or 1) end, "primary")
     p.playAll:SetPoint("RIGHT", p.clear, "LEFT", -6, 0)
+    p.addBtn = TextButton(right, "Add songs", 78, 24, function() p.adding = not p.adding; R.db.pickScroll = 0; R:UpdatePlaylistWindow() end, "ghost")
+    p.addBtn:SetPoint("RIGHT", p.playAll, "LEFT", -6, 0)
+    p.head:SetPoint("RIGHT", p.addBtn, "LEFT", -8, 0)
+    p.headSub:SetPoint("RIGHT", p.addBtn, "LEFT", -8, 0)
+
+    -- click the playlist name to rename it
+    p.rename = CreateFrame("EditBox", nil, right)
+    p.rename:SetFont(TITLE_FONT, 16, "")
+    p.rename:SetTextColor(C.text[1], C.text[2], C.text[3])
+    p.rename:SetAutoFocus(false)
+    p.rename:SetMaxLetters(40)
+    p.rename:SetSize(170, 24)
+    p.rename:SetPoint("TOPLEFT", 0, -2)
+    Fill(p.rename, C.raised)
+    p.rename:Hide()
+    p.rename:SetScript("OnEnterPressed", function(selfB)
+        local pl = R:GetSelectedPlaylist()
+        local name = strtrim and strtrim(selfB:GetText() or "") or (selfB:GetText() or "")
+        if pl and not pl.runtime and name ~= "" then pl.name = name end
+        selfB:ClearFocus(); selfB:Hide(); R:RefreshAll()
+    end)
+    p.rename:SetScript("OnEscapePressed", function(selfB) selfB:ClearFocus(); selfB:Hide() end)
+    p.headHit = CreateFrame("Button", nil, right)
+    p.headHit:SetPoint("TOPLEFT", p.head, "TOPLEFT")
+    p.headHit:SetPoint("BOTTOMRIGHT", p.head, "BOTTOMRIGHT")
+    function p.headHit:Hover(h)
+        local pl = R:GetSelectedPlaylist()
+        if pl and not pl.runtime then SetColor(p.head, h and C.acc or C.text) end
+    end
+    Tip(p.headHit, function() local pl = R:GetSelectedPlaylist(); return pl and not pl.runtime and "Click to rename" or nil end)
+    p.headHit:SetScript("OnClick", function()
+        local pl = R:GetSelectedPlaylist()
+        if not pl or pl.runtime then return end
+        p.rename:SetText(pl.name or "")
+        p.rename:Show(); p.rename:SetFocus(); p.rename:HighlightText()
+    end)
+
+    -- "Add songs": the whole library with a + on each row, adds straight to this playlist
+    local pick = CreateFrame("Frame", nil, right)
+    p.pick = pick
+    pick:SetPoint("TOPLEFT", 0, -46)
+    pick:SetPoint("BOTTOMRIGHT", 0, 0)
+    pick:SetFrameLevel(right:GetFrameLevel() + 5)
+    Fill(pick, C.surface)
+    Outline(pick, C.line)
+    pick.search = Search(pick, 200, "Search songs", function() R.db.pickScroll = 0; R:UpdatePlaylistWindow() end)
+    pick.search:SetPoint("TOPLEFT", 6, -6)
+    pick.hint = Text(pick, 11, C.faint, BODY_FONT, "RIGHT")
+    pick.hint:SetPoint("TOPRIGHT", -10, -12)
+    pick.hint:SetText("+ adds to this playlist")
+    local pickBox = CreateFrame("Frame", nil, pick)
+    pickBox:SetPoint("TOPLEFT", 1, -38)
+    pickBox:SetPoint("BOTTOMRIGHT", -1, 1)
+    p.pickList = List(pickBox, 26, 9, function(row)
+        row.title = Text(row, 13, C.text)
+        row.title:SetPoint("LEFT", 12, 0)
+        row.add = IconButton(row, "plus", 12, function(b)
+            local it = b:GetParent().item
+            if it then R:AddSongToSelectedPlaylist(it.index) end
+        end, "Add to this playlist", 26)
+        row.add:SetPoint("RIGHT", -6, 0)
+        row.state = Text(row, 11, C.faint, BODY_FONT, "RIGHT")
+        row.state:SetPoint("RIGHT", row.add, "LEFT", -4, 0)
+        row.title:SetPoint("RIGHT", row.state, "LEFT", -6, 0)
+        Wheel(row.add, row.wheel)
+        row:SetScript("OnClick", function(selfRow) if selfRow.item then R:AddSongToSelectedPlaylist(selfRow.item.index) end end)
+        Tip(row, nil)
+    end, function(row, item)
+        row.title:SetText(item.song.title or "Untitled")
+        local n = 0
+        local pl = R:GetSelectedPlaylist()
+        for _, idx in ipairs(pl and pl.songs or {}) do if idx == item.index then n = n + 1 end end
+        row.state:SetText(n > 0 and ("in playlist" .. (n > 1 and (" x" .. n) or "")) or "")
+        SetColor(row.title, n > 0 and C.dim or C.text)
+    end, function()
+        local needle = string.lower(pick.search:GetText() or "")
+        local out = {}
+        for i, song in ipairs(R.songs or {}) do
+            if needle == "" or string.find(string.lower(song.title or ""), needle, 1, true) then out[#out + 1] = { index = i, song = song } end
+        end
+        return out
+    end, "pickScroll")
+    p.pickList:SetPoint("TOPLEFT", 0, 0)
+    p.pickList:SetPoint("BOTTOMRIGHT", 0, 0)
+    pick:Hide()
 
     local holder = CreateFrame("Frame", nil, right)
     holder:SetPoint("TOPLEFT", 0, -46)
@@ -903,7 +988,8 @@ function R:BuildPlaylistPage(p)
     p.songs:SetPoint("BOTTOMRIGHT", -1, 1)
     p.songs.empty = function(row)
         row.num:SetText(""); row.rm:Hide(); row.down:Hide(); row.up:Hide()
-        row.title:SetText(R:GetSelectedPlaylist() and "Add songs with the + in Library, or right-click a song." or "Create a playlist on the left.")
+        local pl = R:GetSelectedPlaylist()
+        row.title:SetText(pl and (pl.runtime and "This song pack is empty." or "Empty. Click Add songs above.") or "Create a playlist on the left.")
         SetColor(row.title, C.faint)
     end
 end
@@ -918,6 +1004,11 @@ function R:UpdatePlaylistWindow()
     p.del:SetDisabledLook(fixed)
     p.clear:SetDisabledLook(fixed)
     p.playAll:SetDisabledLook(not pl or #(pl.songs or {}) == 0)
+    if fixed then p.adding = false end
+    p.addBtn:SetDisabledLook(fixed)
+    p.addBtn:SetLabel(p.adding and "Done" or "Add songs")
+    p.addBtn:SetStyle(p.adding and "primary" or "ghost")
+    if p.adding then p.pick:Show(); p.pickList:Refresh() else p.pick:Hide() end
     p.lists:Refresh()
     p.songs:Refresh()
 end

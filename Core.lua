@@ -1,5 +1,5 @@
 GuildRadioFM = GuildRadioFM or {}
-GuildRadioFM.version = "2.6.2"
+GuildRadioFM.version = "2.6.3"
 GuildRadioFM.soundChannel = "Dialog"
 
 -- Credit, in plain text (Blizzard's add-on policy: no hidden or obfuscated code).

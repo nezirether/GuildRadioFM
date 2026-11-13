@@ -2,7 +2,7 @@
 ## Title: GuildRadioFM
 ## Notes: Guild radio with live DJ sets (GuildRadioFM Live): everyone tuned in hears the same moment.
 ## Author: Nez, live sets by Noyze Komplaynt
-## Version: 2.6.2
+## Version: 2.6.3
 ## SavedVariables: GuildRadioFMDB
 
 Compat.lua
