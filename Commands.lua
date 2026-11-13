@@ -16,6 +16,7 @@ function GuildRadioFM:ShowHelp()
     self:Print("/grfm shuffle, /grfm repeat, /grfm autonext, /grfm mute, /grfm favorite, /grfm unlike")
     self:Print("/grfm favorites, /grfm playliked")
     self:Print("/grfm volume 50, /grfm v 50, /grfm song 1, /grfm reset")
+    self:Print("Live sets: /grfm live (window), /grfm dj, /grfm invite, /grfm pass <name>, /grfm endset, /grfm tune, /grfm tuneout, /grfm unblock")
 end
 
 SlashCmdList["GUILDRADIOFM"] = function(message)
@@ -44,6 +45,15 @@ SlashCmdList["GUILDRADIOFM"] = function(message)
     if lower == "mute" then GuildRadioFM:ToggleMute() return end
     if lower == "autonext" then GuildRadioFM:ToggleAutoNext() return end
     if lower == "reset" then GuildRadioFM:Reset() return end
+    if lower == "live" or lower == "requests" then GuildRadioFM:ToggleTab("live") return end
+    if lower == "golive" or lower == "dj" then GuildRadioFM.Live:GoLive() return end
+    local passTo = string.match(raw, "^[Pp][Aa][Ss][Ss]%s+(%S+)$")
+    if passTo then GuildRadioFM.Live:OfferHost(passTo) return end
+    if lower == "invite" then GuildRadioFM.Live:Announce() return end
+    if lower == "endset" then GuildRadioFM.Live:EndSet() return end
+    if lower == "tune" or lower == "tunein" then GuildRadioFM.Live:TuneIn() return end
+    if lower == "tuneout" then GuildRadioFM.Live:TuneOut() return end
+    if lower == "unblock" then GuildRadioFM.db.eb.blocked = {}; GuildRadioFM:Print("Do-not-play list cleared.") return end
 
     local volume = string.match(lower, "^volume%s+(%d+)$") or string.match(lower, "^v%s+(%d+)$")
     if volume then GuildRadioFM:SetVolume(volume) return end

@@ -1,5 +1,32 @@
 GuildRadioFM Changelog
 
+v2.4.2 - GuildRadioFM Live
+
+Live sets (Live tab, /grfm live):
+- Go live and DJ for the guild. Everyone tuned in starts each song at the same moment: every client runs the
+  server clock refined to frame precision, and the DJ schedules each song about a second ahead, so chat lag
+  does not matter. Nothing is streamed; each player's own packaged copy plays.
+- Tune in mid-song and you join at the next 30-second mark (pre-cut copies in Songs/_join, built by
+  tools/make_joins.py; listed in JoinPoints.lua).
+- Several DJs can be live at once; listeners pick a set.
+- Pass host: hand the set to a listener (they accept on a card); the queue and everyone tuned in follow,
+  the music never stops. /grfm pass <name>.
+- Request Line: request a song or vote for one. 5 open requests each; waiting 3+ minutes goes first, then
+  votes, then oldest. DJ: click to play, right-click to decline, shift-right-click to block for the set.
+- Invite posts one line in guild chat and shows guildmates a Tune in card.
+- Commands: /grfm live, /grfm dj, /grfm invite, /grfm pass <name>, /grfm endset, /grfm tune, /grfm tuneout, /grfm unblock
+
+Interface:
+- One window with tabs (Now Playing, Library, Playlists, Live, Settings) replaces the separate windows.
+- Gold Morpheus title and rune emblem, dark glass over the game's own loading-screen art (Kalimdor,
+  Eastern Kingdoms or plain), custom icon set (Media/, built by tools/make_art.py).
+- Opens at 80% size; drag the corner grip or use Settings > Size (50-140%). Mini player, now-playing pop-up.
+
+Compliance:
+- The signature is a plain-text credit (Blizzard add-on policy: no obfuscated code).
+
+v2.1.2 - Forever build (catch-up commit)
+
 v0.6.4 - Ketho API Audit Repair Pass
 
 - Hardened Retail Options panel opening with a safe fallback to the in-addon Settings window.

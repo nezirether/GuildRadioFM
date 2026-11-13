@@ -1,5 +1,5 @@
 GuildRadioFM = GuildRadioFM or {}
-GuildRadioFM.version = "2.1.2-forever-prototype"
+GuildRadioFM.version = "2.4.2"
 GuildRadioFM.soundChannel = "Dialog"
 
 -- Credit, in plain text (Blizzard's add-on policy: no hidden or obfuscated code).
@@ -32,6 +32,14 @@ local defaults = {
     miniWindow = { point = "CENTER", relativePoint = "CENTER", x = 0, y = -180, width = 420, height = 138 },
     settingsWindow = { point = "CENTER", relativePoint = "CENTER", x = -60, y = -20, width = 420, height = 330 },
     addSongsWindow = { point = "CENTER", relativePoint = "CENTER", x = -90, y = -40, width = 560, height = 420 },
+    eb = { open = true, blocked = {} },
+    tab = "now",
+    scale = 0.8,
+    miniScale = 0.9,
+    backdrop = "kalimdor",
+    toast = true,
+    invites = true,
+    miniShown = false,
     minimap = { hide = false, angle = 225 },
 }
 

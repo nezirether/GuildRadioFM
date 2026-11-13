@@ -92,3 +92,21 @@ Playlist controls:
 - Single-click a playlist song to select it.
 - Double-click a playlist song to play it.
 - Play starts the selected playlist song.
+
+GuildRadioFM Live (2.3+)
+One window, five tabs: Now Playing, Library, Playlists, Live, Settings. /grfm opens it, /grfm mini for the mini player.
+
+Live sets (Live tab or /grfm live):
+- Go live: you're the DJ. Everyone tuned in starts each song at the same moment as you. Nothing is streamed:
+  every player runs the same shared clock (the server's, refined to frame precision) and the DJ schedules each
+  song about a second ahead, so chat lag doesn't matter.
+- Tune in mid-song and you join at the next 30-second mark (Songs/_join holds those cuts), in time with everyone.
+- Invite guild posts a line in guild chat and pops a "Tune in" card for guildmates who have 2.3.
+- Request Line: request a song from the Live tab or the request icon in Library; asking again counts as a vote.
+  5 open requests each; waiting 3+ minutes goes first, then most votes, then oldest.
+- DJ: click a request to play it now, right-click to decline, shift-right-click to never play it this set.
+  When a song ends, the top request plays next.
+- Commands: /grfm live, /grfm dj, /grfm invite, /grfm endset, /grfm tune, /grfm tuneout, /grfm unblock
+- Everyone needs the same GuildRadioFM folder. After adding songs run: python tools/make_joins.py
+
+Noyze Komplaynt pack: Songs/Noyze Komplaynt/ (Lost in the Music).
