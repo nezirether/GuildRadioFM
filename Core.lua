@@ -1,5 +1,5 @@
 GuildRadioFM = GuildRadioFM or {}
-GuildRadioFM.version = "2.6.1"
+GuildRadioFM.version = "2.6.2"
 GuildRadioFM.soundChannel = "Dialog"
 
 -- Credit, in plain text (Blizzard's add-on policy: no hidden or obfuscated code).
@@ -34,6 +34,7 @@ local defaults = {
     addSongsWindow = { point = "CENTER", relativePoint = "CENTER", x = -90, y = -40, width = 560, height = 420 },
     eb = { open = true, blocked = {} },
     tab = "now",
+    bgSound = true,
     scale = 0.8,
     miniScale = 0.9,
     backdrop = "kalimdor",
@@ -187,6 +188,13 @@ end
 
 GuildRadioFM.RegisterSong = GuildRadioFM.AddSong
 
+-- WoW stops every sound when the game window loses focus unless "Sound in Background" is on,
+-- which cuts the song off when you alt-tab. This switch (Settings) keeps it on.
+function GuildRadioFM:ApplyBackgroundSound()
+    if not SetCVar or not self.db then return end
+    if self.db.bgSound ~= false then pcall(SetCVar, "Sound_EnableSoundWhenGameIsInBG", "1") end
+end
+
 function GuildRadioFM:Initialize()
     GuildRadioFMDB = GuildRadioFMDB or {}
     CopyDefaults(defaults, GuildRadioFMDB)
@@ -202,6 +210,7 @@ function GuildRadioFM:Initialize()
     self.lastPlayStartedAt = nil
 
     self:SetDialogVolume(self.db.muted and 0 or self.db.volume)
+    self:ApplyBackgroundSound()
     self:CreateEventFrame()
     if self.CreateMinimapButton then self:CreateMinimapButton() end
     if self.CreateOptionsPanel then self:CreateOptionsPanel() end

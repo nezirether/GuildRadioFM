@@ -704,9 +704,41 @@ function R:HandlePlaybackTick()
     return origTick(self)
 end
 
+-- ---------- loading screens ----------
+-- WoW cuts every sound on a loading screen (entering or leaving an instance). Afterwards, pick the song
+-- back up where it would be now: in a room, rejoin the DJ in sync; alone, start the next 30-second join
+-- cut of the same song (or restart it if it has none), so the timer and the music still line up.
+function EB:ResumeAfterLoading()
+    if not R.db or not R.db.isPlaying or not R.startedAt then return end
+    if self.tuned then
+        local d = self.djs[self.tuned]
+        if d and d.key ~= "" and (d.start or 0) > 0 then self:RemotePlay(d.key, d.start) end
+        return
+    end
+    local song, index = R:GetCurrentSong()
+    if not song then return end
+    local songStart = Now() - (GetTime() - R.startedAt)
+    local position = Now() - songStart
+    local duration = tonumber(song.duration) or 0
+    if duration > 0 and position >= duration - 2 then return end   -- it was ending anyway; the song-end timer moves on
+    local point, file = self:JoinPoint(KeyOf(song), position)
+    if point and (duration == 0 or point < duration - 5) then
+        ScheduledPlay(index, songStart, point, file)
+        if self.live then self.songStart = songStart end
+        R:Print("Back from the loading screen: " .. (song.title or "the song") .. " picks up in " .. math.ceil(songStart + point - Now()) .. "s.")
+    else
+        local live = self.live
+        self.live = false            -- restart quietly; listeners' copies were never interrupted
+        ScheduledPlay(index, Now() + 0.2, 0)
+        self.live = live
+        if live then self.songStart = Now() + 0.2 end
+    end
+end
+
 -- ---------- events ----------
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
+ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:RegisterEvent("CHAT_MSG_ADDON")
 ev:RegisterEvent("PLAYER_LOGOUT")
 ev:SetScript("OnEvent", function(_, event, prefix, msg, channel, sender)
@@ -719,6 +751,9 @@ ev:SetScript("OnEvent", function(_, event, prefix, msg, channel, sender)
         R.db.eb = R.db.eb or { open = true, blocked = {} }
         R.db.eb.blocked = R.db.eb.blocked or {}
         C_Timer.After(5, function() Send("HI", "GUILD") end)
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- prefix = isInitialLogin, msg = isReloadingUi; only a real loading screen mid-session cut the sound
+        if not prefix and not msg then C_Timer.After(0.5, function() EB:ResumeAfterLoading() end) end
     elseif event == "CHAT_MSG_ADDON" then
         if prefix == PREFIX and msg and sender then EB:OnMessage(msg, channel, sender) end
     elseif event == "PLAYER_LOGOUT" then

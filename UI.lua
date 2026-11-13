@@ -1389,6 +1389,7 @@ function R:BuildSettingsPage(p)
         { "Play the next song automatically", function() return R.db.autoNext end, function() R:ToggleAutoNext() end },
         { "Mute", function() return R.db.muted end, function() R:ToggleMute() end },
         { "Minimap icon", function() return not (R.db.minimap and R.db.minimap.hide) end, function(on) R:SetMinimapButtonShown(on) end },
+        { "Keep playing when tabbed out", function() return R.db.bgSound ~= false end, function(on) R.db.bgSound = on; R:ApplyBackgroundSound(); R:RefreshAll() end },
         { "Room chat in the chat window", function() return R.db.eb.chatInChat ~= false end, function(on) R.db.eb.chatInChat = on; R:RefreshAll() end },
         { "Mini player", function() return R.miniFrame and R.miniFrame:IsShown() end, function(on) R:ShowMini(on) end },
         { "Now-playing pop-up", function() return R.db.toast ~= false end, function(on) R.db.toast = on; R:RefreshAll() end },
@@ -1400,8 +1401,8 @@ function R:BuildSettingsPage(p)
         local col = (i - 1) % 2
         local line = math.floor((i - 1) / 2)
         local holder = CreateFrame("Frame", nil, p)
-        holder:SetSize(colW, 40)
-        holder:SetPoint("TOPLEFT", col * (colW + 24), -line * 44)
+        holder:SetSize(colW, 34)
+        holder:SetPoint("TOPLEFT", col * (colW + 24), -line * 38)
         Fill(holder, C.surface)
         Outline(holder, C.line)
         local label = Text(holder, 13, C.text)
@@ -1412,7 +1413,7 @@ function R:BuildSettingsPage(p)
         s.get = r[2]
         p.switches[i] = s
     end
-    local y = -math.ceil(#rows / 2) * 44 - 8
+    local y = -math.ceil(#rows / 2) * 38 - 6
     p.sizeLabel = Eyebrow(p, "Size")
     p.sizeLabel:SetPoint("TOPLEFT", 0, y - 4)
     p.size = Slider(p, 160, function(v) R:SetFrameScale(R.mainFrame, "scale", 0.5 + v / 100 * 0.9) end)
@@ -1449,8 +1450,7 @@ function R:BuildSettingsPage(p)
     p.add:SetPoint("TOPLEFT", 0, y - 54)
     p.add:SetPoint("RIGHT", p, "RIGHT", 0, 0)
     p.add:SetSpacing(3)
-    p.add:SetText("Put MP3s in GuildRadioFM\\Songs and list them in SongList.lua (or use the Song Importer page in the addon folder), then /reload. "
-        .. "For rooms, everyone needs the same songs, so share one GuildRadioFM zip with the guild. After adding songs, run tools\\make_joins.py so late listeners can join mid-song.")
+    p.add:SetText("Put MP3s in GuildRadioFM\\Songs, list them in SongList.lua (or use the Song Importer), then /reload. Rooms need everyone on the same songs: share one GuildRadioFM zip with the guild.")
 
     p.credits = Text(p, 11, C.faint)
     p.credits:SetPoint("BOTTOMLEFT", 0, 0)
