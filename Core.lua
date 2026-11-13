@@ -1,10 +1,7 @@
 GuildRadioFM = GuildRadioFM or {}
-GuildRadioFM.Version = "0.6.4"
-GuildRadioFM.version = GuildRadioFM.Version
+GuildRadioFM.version = "2.1.2-forever-prototype"
 GuildRadioFM.soundChannel = "Dialog"
 
-local SECRET_FREQUENCY_CODE = "1138"
-local SECRET_FREQUENCY_CATEGORY = "Secret Frequency"
 local BUILD_OWNER = { 81, 104, 125 }
 local BUILD_TRACE = { 74, 120, 108, 111, 103, 85, 100, 103, 108, 114, 73, 80, 61, 61, 81, 104, 125, 61, 61, 111, 114, 102, 100, 111, 48, 111, 108, 101, 117, 100, 117, 124, 48, 114, 113, 111, 124, 61, 61, 53, 51, 53, 57, 48, 51, 56, 48, 53, 59 }
 local BUILD_NOTE = { 69, 120, 108, 111, 119, 35, 105, 114, 117, 35, 81, 104, 125, 49, 35, 76, 105, 35, 105, 114, 120, 113, 103, 35, 108, 113, 35, 119, 107, 104, 35, 122, 108, 111, 103, 47, 35, 119, 107, 104, 35, 112, 120, 118, 108, 102, 35, 118, 119, 108, 111, 111, 35, 117, 104, 112, 104, 112, 101, 104, 117, 118, 35, 122, 107, 114, 35, 119, 120, 113, 104, 103, 35, 119, 107, 104, 35, 103, 108, 100, 111, 49 }
@@ -19,7 +16,6 @@ end
 
 -- Local library rebuild note: keep this addon intentionally offline and packaged-only.
 local defaults = {
-    schemaVersion = 1,
     volume = 50,
     previousVolume = 50,
     muted = false,
@@ -30,28 +26,19 @@ local defaults = {
     autoNext = true,
     search = "",
     libraryView = "all",
-    secretFrequencyUnlocked = false,
-    hiddenFrequencyUnlocked = false,
     favorites = {},
     playlists = {},
-    queue = {},
-    seek = { offset = 0, lastPercent = 0 },
-    sharing = { enabled = true, inbox = {} },
-    selectedLibrarySongIndex = 1,
     selectedPlaylistIndex = 1,
     playlistEntryIndex = 1,
     playFromPlaylist = false,
     favoriteEntryIndex = 1,
     playFromFavorites = false,
-    window = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0, width = 520, height = 420 },
+    window = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0, width = 420, height = 270 },
     libraryWindow = { point = "CENTER", relativePoint = "CENTER", x = 60, y = -20, width = 520, height = 520 },
     playlistWindow = { point = "CENTER", relativePoint = "CENTER", x = 100, y = -40, width = 560, height = 520 },
-    miniWindow = { point = "CENTER", relativePoint = "CENTER", x = 0, y = -180, width = 340, height = 98 },
+    miniWindow = { point = "CENTER", relativePoint = "CENTER", x = 0, y = -180, width = 420, height = 138 },
     settingsWindow = { point = "CENTER", relativePoint = "CENTER", x = -60, y = -20, width = 420, height = 330 },
     addSongsWindow = { point = "CENTER", relativePoint = "CENTER", x = -90, y = -40, width = 560, height = 420 },
-    hiddenFrequencyWindow = { point = "CENTER", relativePoint = "CENTER", x = 120, y = -60, width = 520, height = 360 },
-    queueWindow = { point = "CENTER", relativePoint = "CENTER", x = 140, y = -80, width = 520, height = 420 },
-    sharingWindow = { point = "CENTER", relativePoint = "CENTER", x = 160, y = -100, width = 540, height = 420 },
     minimap = { hide = false, angle = 225 },
 }
 
@@ -103,64 +90,6 @@ function GuildRadioFM:ShowSignature()
     self:Print("Owner tag: " .. DecodeBuildMark(BUILD_OWNER))
     self:Print("Signature: " .. tostring(self:GetSignature()))
     self:Print(DecodeBuildMark(BUILD_NOTE))
-end
-
-function GuildRadioFM:IsSecretFrequencyUnlocked()
-    return self.db and self.db.secretFrequencyUnlocked == true
-end
-
-function GuildRadioFM:IsHiddenSong(song)
-    return type(song) == "table" and song.hidden == true
-end
-
-function GuildRadioFM:GetHiddenCategory(song)
-    if type(song) == "table" and song.hiddenCategory and song.hiddenCategory ~= "" then
-        return tostring(song.hiddenCategory)
-    end
-    return SECRET_FREQUENCY_CATEGORY
-end
-
-function GuildRadioFM:CanShowSongInLibrary(song, view)
-    if not self:IsHiddenSong(song) then return view ~= "secret" end
-    return view == "secret" and self:IsSecretFrequencyUnlocked()
-end
-
-function GuildRadioFM:GetSecretFrequencySongCount()
-    local count = 0
-    for _, song in ipairs(self.songs or {}) do
-        if self:IsHiddenSong(song) and self:GetHiddenCategory(song) == SECRET_FREQUENCY_CATEGORY then
-            count = count + 1
-        end
-    end
-    return count
-end
-
-function GuildRadioFM:UnlockSecretFrequency(code)
-    if self:IsSecretFrequencyUnlocked() then
-        self:Print("Secret Frequency already unlocked.")
-        return true
-    end
-    code = TrimValue(code)
-    if code ~= SECRET_FREQUENCY_CODE then
-        self:Print("Only static answers.")
-        return false
-    end
-    self.db.secretFrequencyUnlocked = true
-    self.db.libraryView = "secret"
-    self.db.libraryScroll = 0
-    self:Print("Secret Frequency unlocked.")
-    self:RefreshAll()
-    return true
-end
-
-function GuildRadioFM:ResetSecretFrequency()
-    self.db.secretFrequencyUnlocked = false
-    if self.db.libraryView == "secret" then
-        self.db.libraryView = "all"
-        self.db.libraryScroll = 0
-    end
-    self:Print("Secret Frequency locked.")
-    self:RefreshAll()
 end
 
 function GuildRadioFM:RebuildSongLibrary()
@@ -234,14 +163,6 @@ function GuildRadioFM.RegisterSongPack(pack)
     pack.packName = pack.packName or packId
     pack.playlistName = pack.playlistName or pack.packName
     self.songPacks[packId] = pack
-    if self.RegisterLyricsTable and type(pack.lyrics) == "table" then
-        self:RegisterLyricsTable(pack.lyrics)
-    end
-    if self.RegisterSongLyrics then
-        for _, song in ipairs(pack.songs or {}) do
-            self:RegisterSongLyrics(song)
-        end
-    end
 
     if self.db then
         self:RebuildSongLibrary()
@@ -266,37 +187,24 @@ end
 GuildRadioFM.RegisterSong = GuildRadioFM.AddSong
 
 function GuildRadioFM:Initialize()
-    if type(GuildRadioFMDB) ~= "table" then GuildRadioFMDB = {} end
+    GuildRadioFMDB = GuildRadioFMDB or {}
     CopyDefaults(defaults, GuildRadioFMDB)
 
     self.db = GuildRadioFMDB
-    self.db.schemaVersion = 1
     self.songPacks = self.songPacks or {}
-    -- Easter egg locks are playful discovery states, not DRM. Addon code is always inspectable.
-    self.db.hiddenFrequencyUnlocked = false
-    self._foundSignal404 = false
     self:RebuildSongLibrary()
     self.db.favorites = self.db.favorites or {}
     self:EnsurePlaylists()
-    if self.InitializeQueue then self:InitializeQueue() end
-    if self.InitializeSeek then self:InitializeSeek() end
-    if self.InitializeSharing then self:InitializeSharing() end
     self.db.currentIndex = self:NormalizeIndex(self.db.currentIndex)
-    self.db.selectedLibrarySongIndex = self:NormalizeIndex(self.db.selectedLibrarySongIndex)
     self.db.isPlaying = false
     self.startedAt = nil
     self.lastPlayStartedAt = nil
-    self.playbackToken = 0
-    self.autoAdvanceToken = nil
-    self.playbackAdvanceInProgress = false
-    self.soundHandle = nil
 
-    self:CreateEventFrame()
     self:SetDialogVolume(self.db.muted and 0 or self.db.volume)
-    if self.RefreshPlaybackTicker then self:RefreshPlaybackTicker() end
+    self:CreateEventFrame()
     if self.CreateMinimapButton then self:CreateMinimapButton() end
     if self.CreateOptionsPanel then self:CreateOptionsPanel() end
-    self:Print("v" .. self.Version .. " loaded. Use /grfm or /grfm help.")
+    self:Print("v" .. self.version .. " loaded. Use /grfm or /grfm help.")
 end
 
 function GuildRadioFM:EnsurePlaylists()
@@ -420,7 +328,7 @@ function GuildRadioFM:ToggleFavorite(index)
             self:UseFavorites(self.db.favoriteEntryIndex)
         end
     end
-    self:Print((self.db.favorites[index] and "Liked: " or "Unliked: ") .. (song.title or ("Song " .. tostring(index))))
+    self:Print((self.db.favorites[index] and "Liked: " or "Unliked: ") .. (song.title or "Song " .. tostring(index)))
     self:RefreshAll()
 end
 
@@ -448,7 +356,7 @@ function GuildRadioFM:RemoveFavorite(index)
         end
     end
 
-    self:Print("Removed from liked: " .. (song.title or ("Song " .. tostring(index))))
+    self:Print("Removed from liked: " .. (song.title or "Song " .. tostring(index)))
     self:RefreshAll()
 end
 
@@ -462,8 +370,7 @@ end
 
 function GuildRadioFM:SetLibraryView(view)
     view = string.lower(view or "all")
-    if view == "secret" and not self:IsSecretFrequencyUnlocked() then view = "all" end
-    if view ~= "all" and view ~= "favorites" and view ~= "secret" then view = "all" end
+    if view ~= "all" and view ~= "favorites" then view = "all" end
     self.db.libraryView = view
     self.db.libraryScroll = 0
     self:RefreshAll()
@@ -561,7 +468,7 @@ function GuildRadioFM:AddSongToSelectedPlaylist(songIndex)
     local wasEmpty = #playlist.songs == 0
     playlist.songs[#playlist.songs + 1] = tonumber(songIndex)
     if wasEmpty then self:UseSelectedPlaylist(1) end
-    self:Print("Added to " .. playlist.name .. ": " .. (song.title or ("Song " .. tostring(songIndex))))
+    self:Print("Added to " .. playlist.name .. ": " .. (song.title or "Song " .. tostring(songIndex)))
     self:RefreshAll()
 end
 
@@ -707,66 +614,22 @@ function GuildRadioFM:Play(index)
         return
     end
 
-    self.playbackToken = (self.playbackToken or 0) + 1
-    self.autoAdvanceToken = nil
-    self.playbackAdvanceInProgress = false
     self.db.isPlaying = true
     self.startedAt = GetTime and GetTime() or nil
     self.lastPlayStartedAt = self.startedAt
-    if self.ResetSeekState then self:ResetSeekState() end
     self.lastProgressRefresh = nil
     self.durationAdvanceStartedAt = nil
 
-    local started = true
-    if self.PlayLocalTrack then started = self:PlayLocalTrack(song) end
-    if not started then
-        self.db.isPlaying = false
-        self.startedAt = nil
-        self.lastPlayStartedAt = nil
-        self.durationAdvanceStartedAt = nil
-        self.autoAdvanceToken = nil
-        if self.StopLyrics then self:StopLyrics() end
-        self:RefreshAll()
-        return
-    end
-
-    if self.db.isPlaying and self.StartLyrics then
-        local songID = self.GetSongID and self:GetSongID(song) or song.id
-        self:StartLyrics(songID)
-    end
+    if self.PlayLocalTrack then self:PlayLocalTrack(song) end
     if self.ShowNowPlayingToast then self:ShowNowPlayingToast(song) end
-    if self.RefreshPlaybackTicker then self:RefreshPlaybackTicker() end
     self:RefreshAll()
 end
 
 function GuildRadioFM:Stop()
-    self.playbackToken = (self.playbackToken or 0) + 1
-    self.autoAdvanceToken = nil
-    self.playbackAdvanceInProgress = false
     self.db.isPlaying = false
     self.startedAt = nil
-    self.lastPlayStartedAt = nil
-    if self.ResetSeekState then self:ResetSeekState() end
     self.durationAdvanceStartedAt = nil
-    if self.StopLyrics then self:StopLyrics() end
     if self.StopLocalTrack then self:StopLocalTrack() end
-    if self.RefreshPlaybackTicker then self:RefreshPlaybackTicker() end
-    self:RefreshAll()
-end
-
-function GuildRadioFM:StopForWorldTransition(reason)
-    self.playbackToken = (self.playbackToken or 0) + 1
-    self.autoAdvanceToken = nil
-    self.playbackAdvanceInProgress = false
-    if self.StopLocalTrack then self:StopLocalTrack(reason or "world-transition") end
-    self.db.isPlaying = false
-    self.startedAt = nil
-    self.lastPlayStartedAt = nil
-    self.durationAdvanceStartedAt = nil
-    self.lastProgressRefresh = nil
-    if self.ResetSeekState then self:ResetSeekState() end
-    if self.StopLyrics then self:StopLyrics() end
-    if self.RefreshPlaybackTicker then self:RefreshPlaybackTicker() end
     self:RefreshAll()
 end
 
@@ -830,18 +693,7 @@ function GuildRadioFM:SetDialogVolume(amount)
     amount = tonumber(amount) or 0
     if amount < 0 then amount = 0 end
     if amount > 100 then amount = 100 end
-    if self.originalDialogVolume == nil and GetCVar then
-        self.originalDialogVolume = GetCVar("Sound_DialogVolume")
-    end
-    self.changedDialogVolume = true
     if SetCVar then SetCVar("Sound_DialogVolume", tostring(amount / 100)) end
-end
-
-function GuildRadioFM:RestoreDialogVolume()
-    if self.changedDialogVolume and self.originalDialogVolume ~= nil and SetCVar then
-        SetCVar("Sound_DialogVolume", tostring(self.originalDialogVolume))
-    end
-    self.changedDialogVolume = false
 end
 
 function GuildRadioFM:SetVolume(amount)
@@ -892,7 +744,6 @@ end
 function GuildRadioFM:GetProgressText()
     local song = self:GetCurrentSong()
     if not self.db.isPlaying or not song then return "Stopped" end
-    if self.GetSeekProgressText then return self:GetSeekProgressText() end
     if not song.duration or not self.startedAt or not GetTime then return "Playing" end
 
     local elapsed = math.max(0, math.floor(GetTime() - self.startedAt))
@@ -906,17 +757,10 @@ function GuildRadioFM:RefreshProgressDisplays()
     if self.UpdateMiniWindow then self:UpdateMiniWindow() end
 end
 
-function GuildRadioFM:AdvanceAfterTrackEnd(reason, token)
-    -- Path-based MP3 playback does not produce a reliable event-driven finished
-    -- signal in WoW. Auto-advance is intentionally owned by the duration clock.
-    if token and token ~= self.playbackToken then return end
-    if self.playbackAdvanceInProgress then return end
-    self.playbackAdvanceInProgress = true
+function GuildRadioFM:AdvanceAfterTrackEnd()
+    self.soundHandle = nil
 
-    if not self.db.isPlaying then
-        self.playbackAdvanceInProgress = false
-        return
-    end
+    if not self.db.isPlaying then return end
     if self.db.repeatSong then
         self:Play()
     elseif self.db.autoNext then
@@ -925,18 +769,13 @@ function GuildRadioFM:AdvanceAfterTrackEnd(reason, token)
         self.db.isPlaying = false
         self.startedAt = nil
         self.durationAdvanceStartedAt = nil
-        if self.StopLyrics then self:StopLyrics() end
-        if self.StopLocalTrack then self:StopLocalTrack("duration-ended") end
-        if self.RefreshPlaybackTicker then self:RefreshPlaybackTicker() end
         self:RefreshAll()
     end
-    self.playbackAdvanceInProgress = false
 end
 
 function GuildRadioFM:HandleSoundFinished(handle)
-    -- SOUNDKIT_FINISHED is useful for Blizzard sound kits, but local MP3 paths
-    -- played with PlaySoundFile are not reliable enough to drive track changes.
-    -- Keep this as a no-op so the duration clock remains the single authority.
+    if handle and self.soundHandle and handle ~= self.soundHandle then return end
+    self:AdvanceAfterTrackEnd()
 end
 
 function GuildRadioFM:HandlePlaybackTick()
@@ -952,16 +791,12 @@ function GuildRadioFM:HandlePlaybackTick()
 
     local song = self:GetCurrentSong()
     local duration = song and tonumber(song.duration) or nil
-    -- Missing duration is allowed: the song can play and manual controls still
-    -- work, but GuildRadioFM will not invent a fake end time or auto-advance.
     if not duration or duration <= 0 or not self.startedAt then return end
-    local token = self.playbackToken
-    if self.autoAdvanceToken == token then return end
+    if self.durationAdvanceStartedAt == self.startedAt then return end
 
     if now - self.startedAt >= duration then
-        self.autoAdvanceToken = token
         self.durationAdvanceStartedAt = self.startedAt
-        self:AdvanceAfterTrackEnd("duration", token)
+        self:AdvanceAfterTrackEnd()
     end
 end
 
@@ -969,48 +804,24 @@ function GuildRadioFM:CreateEventFrame()
     if self.eventFrame then return end
     local frame = CreateFrame("Frame")
     self.eventFrame = frame
-    frame:RegisterEvent("CHAT_MSG_ADDON")
-    frame:RegisterEvent("PLAYER_LOGOUT")
-    frame:RegisterEvent("PLAYER_LEAVING_WORLD")
-    frame:RegisterEvent("LOADING_SCREEN_ENABLED")
+    frame:RegisterEvent("SOUNDKIT_FINISHED")
     frame:SetScript("OnEvent", function(_, event, ...)
-        if event == "CHAT_MSG_ADDON" and GuildRadioFM.HandleAddonMessage then
-            GuildRadioFM:HandleAddonMessage(...)
-        elseif event == "PLAYER_LOGOUT" or event == "PLAYER_LEAVING_WORLD" or event == "LOADING_SCREEN_ENABLED" then
-            if event == "PLAYER_LOGOUT" and GuildRadioFM.RestoreDialogVolume then
-                GuildRadioFM:RestoreDialogVolume()
-            end
-            GuildRadioFM:StopForWorldTransition(event)
+        if event == "SOUNDKIT_FINISHED" then
+            GuildRadioFM:HandleSoundFinished(...)
         end
     end)
-    self.playbackOnUpdate = function()
-        if GuildRadioFM.UpdateLyrics then GuildRadioFM:UpdateLyrics() end
+    frame:SetScript("OnUpdate", function()
         GuildRadioFM:HandlePlaybackTick()
-        if GuildRadioFM.RefreshPlaybackTicker then GuildRadioFM:RefreshPlaybackTicker() end
-    end
-    self:RefreshPlaybackTicker()
-end
-
-function GuildRadioFM:RefreshPlaybackTicker()
-    if not self.eventFrame then return end
-    local lyricsActive = self.lyricState and self.lyricState.active
-    local playing = self.db and self.db.isPlaying
-    if playing or lyricsActive then
-        self.eventFrame:SetScript("OnUpdate", self.playbackOnUpdate)
-    else
-        self.eventFrame:SetScript("OnUpdate", nil)
-    end
+    end)
 end
 
 function GuildRadioFM:Reset()
     GuildRadioFMDB = {}
     CopyDefaults(defaults, GuildRadioFMDB)
     self.db = GuildRadioFMDB
-    self.db.schemaVersion = 1
     self:RebuildSongLibrary()
     self.db.favorites = self.db.favorites or {}
     self:EnsurePlaylists()
-    if self.InitializeQueue then self:InitializeQueue() end
     self:Stop()
     self:SetDialogVolume(self.db.volume)
     self:Print("Settings reset.")
@@ -1026,7 +837,6 @@ function GuildRadioFM:RefreshAll()
     if self.UpdateMiniWindow then self:UpdateMiniWindow() end
     if self.UpdateLibraryWindow then self:UpdateLibraryWindow() end
     if self.UpdatePlaylistWindow then self:UpdatePlaylistWindow() end
-    if self.UpdateQueueWindow then self:UpdateQueueWindow() end
     if self.UpdateSettingsWindow then self:UpdateSettingsWindow() end
     if self.UpdateOptionsPanel then self:UpdateOptionsPanel() end
     if self.UpdateMinimapButton then self:UpdateMinimapButton() end

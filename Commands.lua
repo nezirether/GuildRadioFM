@@ -1,6 +1,5 @@
 SLASH_GUILDRADIOFM1 = "/grfm"
 SLASH_GUILDRADIOFM2 = "/guildradiofm"
-SLASH_GUILDRADIOFM3 = "/gr"
 
 -- Local player commands only.
 local function Trim(value)
@@ -16,11 +15,6 @@ function GuildRadioFM:ShowHelp()
     self:Print("/grfm addsongs")
     self:Print("/grfm shuffle, /grfm repeat, /grfm autonext, /grfm mute, /grfm favorite, /grfm unlike")
     self:Print("/grfm favorites, /grfm playliked")
-    self:Print("/grfm queue, /grfm queue status, /grfm queue clear")
-    self:Print("/grfm restart, /grfm seek 60, /grfm seek +10, /grfm seek -10")
-    self:Print("/grfm share, /grfm request, /grfm requests, /grfm share status")
-    self:Print("/grfm sharing on, /grfm sharing off, /grfm sharing status")
-    self:Print("/grfm lyrics test, /grfm lyrics status")
     self:Print("/grfm volume 50, /grfm v 50, /grfm song 1, /grfm reset")
 end
 
@@ -38,37 +32,6 @@ SlashCmdList["GUILDRADIOFM"] = function(message)
     if lower == "library" then GuildRadioFM:ToggleLibraryWindow() return end
     if lower == "favorites" or lower == "liked" then GuildRadioFM:SetLibraryView("favorites"); GuildRadioFM:ToggleLibraryWindow() return end
     if lower == "playliked" or lower == "playfavorites" then GuildRadioFM:PlayFavoriteEntry(1) return end
-    if lower == "queue" then GuildRadioFM:ToggleQueueWindow(true) return end
-    if lower == "queue clear" then GuildRadioFM:ClearQueue() return end
-    if lower == "queue status" then GuildRadioFM:Print("Songs queued: " .. tostring(GuildRadioFM:GetQueueCount())) return end
-    if lower == "restart" then GuildRadioFM:RestartCurrentTrack() return end
-    if lower == "share" or lower == "share current" then GuildRadioFM:ShareCurrentSong() return end
-    if lower == "request" or lower == "request current" then GuildRadioFM:RequestCurrentSong() return end
-    if lower == "requests" or lower == "share inbox" then GuildRadioFM:ToggleSharingWindow(true) return end
-    if lower == "share clear" then GuildRadioFM:ClearSharingInbox() return end
-    if lower == "share status" then GuildRadioFM:PrintSharingStatus() return end
-    if lower == "share toggle" then GuildRadioFM:ToggleSharing() return end
-    if lower == "sharing on" then GuildRadioFM:SetMetadataSharingAllowed(true) return end
-    if lower == "sharing off" then GuildRadioFM:SetMetadataSharingAllowed(false) return end
-    if lower == "sharing status" then GuildRadioFM:PrintMetadataSharingStatus() return end
-    local seekAmount = string.match(lower, "^seek%s+([%+%-]?%d+)$")
-    if seekAmount then
-        if string.sub(seekAmount, 1, 1) == "+" or string.sub(seekAmount, 1, 1) == "-" then
-            GuildRadioFM:SeekBy(tonumber(seekAmount))
-        else
-            GuildRadioFM:SeekTo(tonumber(seekAmount))
-        end
-        return
-    end
-    if lower == "lyrics test" then GuildRadioFM:StartLyricsTest(); if GuildRadioFM.RefreshPlaybackTicker then GuildRadioFM:RefreshPlaybackTicker() end return end
-    if lower == "lyrics status" then GuildRadioFM:PrintLyricsStatus() return end
-    if lower == "secret reset" then GuildRadioFM:ResetSecretFrequency() return end
-    if lower == "listener" then GuildRadioFM:UnlockHiddenFrequency() return end
-    if lower == "hidden" then GuildRadioFM:ShowHiddenFrequency() return end
-    if lower == "lockhidden" then GuildRadioFM:LockHiddenFrequencyForTesting() return end
-    if lower == "tune" then GuildRadioFM:TuneFrequency("") return end
-    local frequency = string.match(lower, "^tune%s+(.+)$")
-    if frequency then GuildRadioFM:TuneFrequency(frequency) return end
     if lower == "playlist" or lower == "playlists" then GuildRadioFM:TogglePlaylistWindow() return end
     if lower == "mini" then GuildRadioFM:ToggleMiniWindow() return end
     if lower == "settings" then GuildRadioFM:ToggleSettingsWindow() return end

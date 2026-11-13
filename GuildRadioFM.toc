@@ -1,17 +1,13 @@
-## Interface: 120005
+## Interface: 16001
 ## Title: GuildRadioFM
 ## Notes: Local packaged music player for WoW
 ## Author: GuildRadioFM
-## Version: 0.6.4
+## Version: 2.1.2-forever-16001-backdropfix
 ## SavedVariables: GuildRadioFMDB
 
+Compat.lua
 SongList.lua
 Core.lua
-Core/Lyrics.lua
-Core/HiddenFrequency.lua
-Core/Queue.lua
-Core/Seek.lua
-Core/Sharing.lua
 Audio.lua
 UI.lua
 Commands.lua
