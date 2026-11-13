@@ -354,8 +354,9 @@ function R:CreateMainWindow()
     f.logoFM:SetText("FM")
     f.close = IconButton(f, "close", 14, function() f:Hide() end, nil)
     f.close:SetPoint("TOPRIGHT", -8, -10)
-    f.miniBtn = IconButton(f, "minus", 14, function() f:Hide(); R:ShowMini(true) end, "Mini player")
-    f.miniBtn:SetPoint("RIGHT", f.close, "LEFT", -2, 0)
+    f.miniBtn = TextButton(f, "Mini player", 82, 22, function() R:ToggleMiniWindow() end, "ghost")
+    f.miniBtn.label:SetFont(BODY_FONT, 11, "")
+    f.miniBtn:SetPoint("RIGHT", f.close, "LEFT", -6, 0)
     f.headLive = Text(f, 11, C.live, BODY_FONT, "RIGHT")
     f.headLive:SetPoint("RIGHT", f.miniBtn, "LEFT", -10, 0)
 
@@ -1190,6 +1191,7 @@ function R:BuildSettingsPage(p)
         { "Play the next song automatically", function() return R.db.autoNext end, function() R:ToggleAutoNext() end },
         { "Mute", function() return R.db.muted end, function() R:ToggleMute() end },
         { "Minimap icon", function() return not (R.db.minimap and R.db.minimap.hide) end, function(on) R:SetMinimapButtonShown(on) end },
+        { "Mini player", function() return R.miniFrame and R.miniFrame:IsShown() end, function(on) R:ShowMini(on) end },
         { "Now-playing pop-up", function() return R.db.toast ~= false end, function(on) R.db.toast = on; R:RefreshAll() end },
         { "Live invites from the guild", function() return R.db.invites ~= false end, function(on) R.db.invites = on; R:RefreshAll() end },
     }
@@ -1296,7 +1298,9 @@ function R:CreateMiniWindow()
     m.next = IconButton(m, "next", 12, function() R:Next() end, "Next", 24)
     m.close = IconButton(m, "close", 10, function() R:ShowMini(false) end, nil, 20)
     m.close:SetPoint("TOPRIGHT", -2, -2)
-    m.next:SetPoint("RIGHT", -24, -1)
+    m.open = IconButton(m, "up", 10, function() R:ShowTab(R.db.tab or "now") end, "Open the full player", 20)
+    m.open:SetPoint("TOPRIGHT", m.close, "TOPLEFT", 0, 0)
+    m.next:SetPoint("RIGHT", -44, -1)
     m.play:SetPoint("RIGHT", m.next, "LEFT", -2, 0)
     m.eyebrow = Text(m, 9, C.faint)
     m.eyebrow:SetPoint("TOPLEFT", 50, -10)
@@ -1321,6 +1325,7 @@ function R:ShowMini(on)
     self.db.miniShown = on and true or false
     if on then self.miniFrame:Show() else self.miniFrame:Hide() end
     self:UpdateMiniWindow()
+    if self.UpdateSettingsWindow then self:UpdateSettingsWindow() end
 end
 
 function R:ToggleMiniWindow()
