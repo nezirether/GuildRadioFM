@@ -9,6 +9,7 @@ local EMBLEM = MEDIA .. "GuildRadioFM_Emblem.tga"
 local LOGO_FONT = "Fonts\\MORPHEUS.TTF"
 -- the game's own loading-screen art, darkened, behind the window
 local BACKDROPS = {
+    { key = "forge", label = "Forge", path = MEDIA .. "GuildRadioFM_Forge.tga" },
     { key = "kalimdor", label = "Kalimdor", path = "Interface\\Glues\\LoadingScreens\\LoadScreenKalimdor" },
     { key = "eastern", label = "Eastern Kingdoms", path = "Interface\\Glues\\LoadingScreens\\LoadScreenEasternKingdom" },
     { key = "none", label = "Plain" },
@@ -21,9 +22,9 @@ local BODY_FONT = "Fonts\\ARIALN.TTF"
 local C = {
     bg = { 0.035, 0.031, 0.027, 0.97 },
     shade = { 0.02, 0.018, 0.015, 0.8 },
-    surface = { 0.06, 0.054, 0.047, 0.78 },
-    raised = { 0.13, 0.115, 0.095, 0.95 },
-    line = { 1, 1, 1, 0.07 },
+    surface = { 0.085, 0.053, 0.037, 0.92 },
+    raised = { 0.19, 0.065, 0.05, 0.98 },
+    line = { 0.74, 0.46, 0.23, 0.45 },
     text = { 0.96, 0.94, 0.9, 1 },
     dim = { 0.66, 0.62, 0.55, 1 },
     faint = { 0.45, 0.42, 0.37, 1 },
@@ -86,8 +87,13 @@ end
 local function Tip(frame, text)
     frame:SetScript("OnEnter", function(selfF)
         if selfF.Hover then selfF:Hover(true) end
-        local tip = type(text) == "function" and text(selfF) or text
-        if tip and GameTooltip then
+        local tip
+        if type(text) == "function" then
+            tip = text(selfF)
+        else
+            tip = text
+        end
+        if type(tip) == "string" and tip ~= "" and GameTooltip then
             GameTooltip:SetOwner(selfF, "ANCHOR_TOP")
             GameTooltip:SetText(tip, 1, 1, 1)
             GameTooltip:Show()
@@ -321,7 +327,7 @@ local function EB() return R.Live end
 
 -- ---------- main window ----------
 local TABS = { { "now", "Now Playing" }, { "library", "Library" }, { "playlists", "Playlists" }, { "live", "Live" }, { "settings", "Settings" } }
-local W, H = 640, 452          -- design size; shown scaled (db.scale, default 0.8)
+local W, H = 680, 480          -- design size; shown scaled (db.scale, default 0.8)
 
 function R:CreateMainWindow()
     if self.mainFrame then return end
@@ -344,6 +350,8 @@ function R:CreateMainWindow()
     f.shade:SetDrawLayer("BACKGROUND", 2)
     f.shade:SetAllPoints()
     f.headShade = Tex(f, "BACKGROUND", { 0, 0, 0 }, 0.45)
+    f.headShade:SetTexture(MEDIA .. "GuildRadioFM_ForgeHeader.tga")
+    f.headShade:SetVertexColor(1,1,1,1)
     f.headShade:SetDrawLayer("BACKGROUND", 3)
     f.headShade:SetPoint("TOPLEFT"); f.headShade:SetPoint("TOPRIGHT"); f.headShade:SetHeight(88)
     Outline(f, C.acc, 0.25)
@@ -480,16 +488,21 @@ end
 function R:ApplyBackdrop()
     local f = self.mainFrame
     if not f then return end
-    local choice = self.db.backdrop or "kalimdor"
+    local choice = self.db.backdrop or "forge"
     local path
     for _, b in ipairs(BACKDROPS) do if b.key == choice then path = b.path end end
     if path then
         f.art:SetTexture(path)
         -- loading screens are 4:3; trim top and bottom to the window's shape
         local cut = (1 - (4 / 3) / (W / H)) / 2
-        f.art:SetTexCoord(0, 1, cut, 1 - cut)
+        if choice == "forge" then
+            f.art:SetTexCoord(0,1,0,1)
+            f.shade:SetAlpha(0.15)
+        else
+            f.art:SetTexCoord(0, 1, cut, 1 - cut)
+            f.shade:SetAlpha(1)
+        end
         f.art:Show()
-        f.shade:SetAlpha(1)
     else
         f.art:Hide()
         f.shade:SetAlpha(0)
@@ -577,6 +590,9 @@ function R:BuildNowPage(p)
     p.sub = Text(p, 13, C.dim)
     p.sub:SetPoint("TOPLEFT", p.title, "BOTTOMLEFT", 0, -8)
     p.sub:SetPoint("RIGHT", p, "RIGHT", 0, 0)
+    p.lyric = Text(p, 14, C.acc)
+    p.lyric:SetPoint("TOPLEFT", x, -81)
+    p.lyric:SetPoint("RIGHT", p, "RIGHT", 0, 0)
 
     p.bar = CreateFrame("Frame", nil, p)
     p.bar:SetPoint("TOPLEFT", x, -102)
@@ -623,6 +639,12 @@ function R:BuildNowPage(p)
     p.volText = Text(p, 11, C.dim)
     p.volText:SetPoint("LEFT", p.volume, "RIGHT", 10, 0)
 
+    p.localQueue = Text(p, 13, C.text)
+    p.localQueue:SetPoint("TOPLEFT", x, -238)
+    p.localQueue:SetPoint("RIGHT", p, "RIGHT", -112, 0)
+    p.playQueue = TextButton(p, "Play queue", 94, 25, function() R:PlayNextInQueue() end, "ghost")
+    p.playQueue:SetPoint("TOPRIGHT", 0, -231)
+
     -- live banner
     p.banner = CreateFrame("Frame", nil, p)
     p.banner:SetPoint("BOTTOMLEFT", 0, 0)
@@ -647,6 +669,9 @@ function R:UpdateNowPage()
     if not PageShown("now") then return end
     local p = self.mainFrame.pages.now
     local song, index = self:GetCurrentSong()
+    local queued = self:GetQueue()[1]
+    local queuedTitle = type(queued) == "table" and tostring(queued.title or queued.songID or "Unavailable")
+    p.localQueue:SetText(queuedTitle and ("Up next locally: " .. queuedTitle) or "Local queue is empty")
     local eyebrow, ec = self:StatusLine()
     p.eyebrow:SetText(eyebrow)
     SetColor(p.eyebrow, ec)
@@ -704,6 +729,7 @@ function R:UpdateProgress()
         p.barFill:SetWidth(math.max(0.01, d > 0 and w * e / d or 0))
         p.elapsed:SetText(Fmt(e))
         p.total:SetText(d > 0 and Fmt(d) or "")
+        p.lyric:SetText(self:CurrentLyric())
         local eb = EB()
         if eb and eb:JoiningIn() then p.sub:SetText(string.format("Joining in %ds, right in time with the set", math.ceil(eb:JoiningIn()))) end
     end
@@ -722,7 +748,7 @@ function R:GetFilteredSongs()
         local title = string.lower(song.title or "")
         local matchesView = view ~= "favorites" or self:IsFavorite(index)
         local matchesFilter = filter == "" or string.find(title, filter, 1, true)
-        if matchesView and matchesFilter then rows[#rows + 1] = { index = index, song = song } end
+        if self:CanPlaySong(song) and matchesView and matchesFilter then rows[#rows + 1] = { index = index, song = song } end
     end
     return rows
 end
@@ -756,12 +782,14 @@ function R:BuildLibraryPage(p)
         row.add = IconButton(row, "plus", 12, function(b) R:AddSongToSelectedPlaylist(b:GetParent().item.index) end,
             function() local pl = R:GetSelectedPlaylist(); return pl and not pl.runtime and ("Add to " .. pl.name) or "Make a playlist first" end, 26)
         row.like = IconButton(row, "heartline", 13, function(b) R:ToggleFavorite(b:GetParent().item.index) end, "Like", 26)
+        row.queue = IconButton(row, "plus", 13, function(b) R:AddToQueue(b:GetParent().item.index) end, "Add to local queue", 26)
         row.like:SetPoint("RIGHT", -6, 0)
         row.add:SetPoint("RIGHT", row.like, "LEFT", 0, 0)
         row.req:SetPoint("RIGHT", row.add, "LEFT", 0, 0)
-        row.dur:SetPoint("RIGHT", row.req, "LEFT", -6, 0)
+        row.queue:SetPoint("RIGHT", row.req, "LEFT", 0, 0)
+        row.dur:SetPoint("RIGHT", row.queue, "LEFT", -6, 0)
         row.title:SetPoint("RIGHT", row.dur, "LEFT", -8, 0)
-        for _, b in ipairs({ row.req, row.add, row.like }) do Wheel(b, row.wheel) end
+        for _, b in ipairs({ row.req, row.add, row.like, row.queue }) do Wheel(b, row.wheel) end
         row:SetScript("OnClick", function(selfRow, mouse)
             if not selfRow.item then return end
             if mouse == "RightButton" then R:AddSongToSelectedPlaylist(selfRow.item.index) else R:PlaySong(selfRow.item.index) end
@@ -782,13 +810,13 @@ function R:BuildLibraryPage(p)
             row.req:Show()
             row.req:SetActive(eb:Requested(eb.KeyOf(item.song)))
         else row.req:Hide() end
-        row.add:Show(); row.like:Show()
+        row.add:Show(); row.like:Show(); row.queue:Show()
         if current then row.mark:Show() end
     end, function() return R:GetFilteredSongs() end, "libraryScroll")
     p.list:SetPoint("TOPLEFT", 1, -1)
     p.list:SetPoint("BOTTOMRIGHT", -1, 1)
     p.list.empty = function(row)
-        row.num:SetText(""); row.dur:SetText(""); row.req:Hide(); row.add:Hide(); row.like:Hide()
+        row.num:SetText(""); row.dur:SetText(""); row.req:Hide(); row.add:Hide(); row.like:Hide(); row.queue:Hide()
         row.title:SetText(R:GetSongCount() == 0 and "No songs yet. See Settings for how to add them." or "Nothing matches.")
         SetColor(row.title, C.faint)
     end
@@ -1428,7 +1456,7 @@ function R:ToggleInviteMenu(anchor)
     m:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -4)
     m:Show()
     self:FillInviteMenu()
-    if C_Timer and C_Timer.After then C_Timer.After(1.5, function() if m:IsShown() then R:FillInviteMenu() end end) end
+    R.After(1.5, function() if m:IsShown() then R:FillInviteMenu() end end)
 end
 
 function R:FillInviteMenu()
@@ -1792,7 +1820,7 @@ function R:CreateMinimapButton()
         GameTooltip:SetOwner(selfB, "ANCHOR_LEFT")
         GameTooltip:SetText("GuildRadioFM", C.acc[1], C.acc[2], C.acc[3])
         local song = R.db.isPlaying and R:GetCurrentSong()
-        if song then GameTooltip:AddLine(song.title, 1, 1, 1) end
+        if song and type(song.title) == "string" and song.title ~= "" then GameTooltip:AddLine(song.title, 1, 1, 1) end
         GameTooltip:AddLine("Click: open   Right-click: mini player   Drag: move", 0.6, 0.62, 0.66)
         GameTooltip:Show()
     end)

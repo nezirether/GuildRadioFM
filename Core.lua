@@ -1,5 +1,5 @@
 GuildRadioFM = GuildRadioFM or {}
-GuildRadioFM.version = "2.6.3"
+GuildRadioFM.version = "2.7.0-rc.1"
 GuildRadioFM.soundChannel = "Dialog"
 
 -- Credit, in plain text (Blizzard's add-on policy: no hidden or obfuscated code).
@@ -34,22 +34,29 @@ local defaults = {
     addSongsWindow = { point = "CENTER", relativePoint = "CENTER", x = -90, y = -40, width = 560, height = 420 },
     eb = { open = true, blocked = {} },
     tab = "now",
-    bgSound = true,
+    bgSound = false,
+    queue = {},
     scale = 0.8,
     miniScale = 0.9,
-    backdrop = "kalimdor",
+    backdrop = "forge",
     toast = true,
     invites = true,
     miniShown = false,
     minimap = { hide = false, angle = 225 },
 }
 
-local function CopyDefaults(source, destination)
+local function CopyDefaults(source, destination, invalid, prefix)
     -- Keep saved settings without importing old radio/share state.
     for key, value in pairs(source) do
+        local path = (prefix or "") .. key
+        local previous = destination[key]
+        if previous ~= nil and type(previous) ~= type(value) and invalid then
+            invalid[path] = previous
+            destination[key] = nil
+        end
         if type(value) == "table" then
             destination[key] = destination[key] or {}
-            CopyDefaults(value, destination[key])
+            CopyDefaults(value, destination[key], invalid, path .. ".")
         elseif destination[key] == nil then
             destination[key] = value
         end
@@ -102,15 +109,18 @@ function GuildRadioFM:RebuildSongLibrary()
     local songIndexById = {}
 
     local function addSong(song, packId)
-        if type(song) ~= "table" or not song.file or song.file == "" then return nil end
+        if type(song) ~= "table" or type(song.file) ~= "string" or song.file == "" then return nil end
         local copy = {}
         for key, value in pairs(song) do copy[key] = value end
         if packId and (not copy.id or copy.id == "") then
             copy.id = tostring(packId) .. ":" .. tostring(copy.title or copy.file)
         end
+        if type(copy.id) ~= "string" then copy.id = nil end
+        if type(copy.title) ~= "string" then copy.title = copy.file end
+        if self.RegisterSongLyrics then self:RegisterSongLyrics(copy) end
         local idKey = copy.id and string.lower(copy.id) or nil
-        local fileKey = copy.file and string.lower(copy.file) or nil
-        local titleKey = copy.title and string.lower(copy.title) or nil
+        local fileKey = string.lower(copy.file)
+        local titleKey = string.lower(copy.title)
         if idKey and seenId[idKey] then return seenId[idKey] end
         if fileKey and seenFile[fileKey] then return seenFile[fileKey] end
         if titleKey and seenTitle[titleKey] then return seenTitle[titleKey] end
@@ -164,7 +174,9 @@ function GuildRadioFM.RegisterSongPack(pack)
     pack.packId = packId
     pack.packName = pack.packName or packId
     pack.playlistName = pack.playlistName or pack.packName
+    if type(pack.songs) ~= "table" then return false end
     self.songPacks[packId] = pack
+    if self.RegisterLyricsTable then self:RegisterLyricsTable(pack.lyrics) end
 
     if self.db then
         self:RebuildSongLibrary()
@@ -178,12 +190,12 @@ function GuildRadioFM.RegisterSongPack(pack)
 end
 
 function GuildRadioFM.AddSong(song)
-    return GuildRadioFM.RegisterSongPack({
-        packId = "Loose Songs",
-        packName = "Loose Songs",
-        playlistName = "Loose Songs",
-        songs = { song },
-    })
+    if type(song) ~= "table" or type(song.file) ~= "string" or song.file == "" then return false end
+    local existing = GuildRadioFM.songPacks and GuildRadioFM.songPacks["Loose Songs"]
+    local songs = {}
+    for _, prior in ipairs(existing and existing.songs or {}) do songs[#songs + 1] = prior end
+    songs[#songs + 1] = song
+    return GuildRadioFM.RegisterSongPack({packId="Loose Songs", songs=songs})
 end
 
 GuildRadioFM.RegisterSong = GuildRadioFM.AddSong
@@ -192,14 +204,57 @@ GuildRadioFM.RegisterSong = GuildRadioFM.AddSong
 -- which cuts the song off when you alt-tab. This switch (Settings) keeps it on.
 function GuildRadioFM:ApplyBackgroundSound()
     if not SetCVar or not self.db then return end
-    if self.db.bgSound ~= false then pcall(SetCVar, "Sound_EnableSoundWhenGameIsInBG", "1") end
+    local cvar = "Sound_EnableSoundWhenGameIsInBG"
+    if self.db.bgSound then
+        if self.backgroundSoundBefore == nil and GetCVar then self.backgroundSoundBefore = GetCVar(cvar) end
+        pcall(SetCVar, cvar, "1")
+    elseif self.backgroundSoundBefore ~= nil then
+        if not GetCVar or GetCVar(cvar) == "1" then pcall(SetCVar, cvar, self.backgroundSoundBefore) end
+        self.backgroundSoundBefore = nil
+    end
 end
 
+local SCHEMA_VERSION = 1
 function GuildRadioFM:Initialize()
-    GuildRadioFMDB = GuildRadioFMDB or {}
-    CopyDefaults(defaults, GuildRadioFMDB)
-
-    self.db = GuildRadioFMDB
+    local db = GuildRadioFMDB
+    if type(db) == "table" and (tonumber(db.schemaVersion) or 0) > SCHEMA_VERSION then
+        self:Print("This saved data requires a newer GuildRadioFM. It was left untouched.")
+        return
+    end
+    if type(db) ~= "table" then db = {recoveredRoot=db} end
+    local invalid = {}
+    CopyDefaults(defaults, db, invalid)
+    for index, playlist in pairs(db.playlists) do
+        if type(index) == "number" then
+            if type(playlist) ~= "table" then
+                invalid["playlists."..index] = playlist
+                db.playlists[index] = {name="Recovered playlist", songs={}}
+            else
+                if type(playlist.name) ~= "string" then
+                    invalid["playlists."..index..".name"] = playlist.name
+                    playlist.name = "Recovered playlist"
+                end
+                if type(playlist.songs) ~= "table" then
+                    invalid["playlists."..index..".songs"] = playlist.songs
+                    playlist.songs = {}
+                end
+            end
+        end
+    end
+    if next(invalid) then
+        if type(db.recoveryValues) ~= "table" then
+            local previous = db.recoveryValues
+            db.recoveryValues = { previous=previous }
+        end
+        db.recoveryValues[#db.recoveryValues + 1] = invalid
+    end
+    db.schemaVersion = SCHEMA_VERSION
+    GuildRadioFMDB = db
+    self.db = db
+    if self.RegisterLyricsTable then self:RegisterLyricsTable(GuildRadioFM_Lyrics) end
+    for _, pack in pairs(self.songPacks or {}) do
+        if self.RegisterLyricsTable then self:RegisterLyricsTable(pack.lyrics) end
+    end
     self.songPacks = self.songPacks or {}
     self:RebuildSongLibrary()
     self.db.favorites = self.db.favorites or {}
@@ -209,7 +264,6 @@ function GuildRadioFM:Initialize()
     self.startedAt = nil
     self.lastPlayStartedAt = nil
 
-    self:SetDialogVolume(self.db.muted and 0 or self.db.volume)
     self:ApplyBackgroundSound()
     self:CreateEventFrame()
     if self.CreateMinimapButton then self:CreateMinimapButton() end
@@ -251,6 +305,8 @@ end
 function GuildRadioFM:NormalizeIndex(index)
     local count = self:GetSongCount()
     index = tonumber(index) or 1
+    if index ~= index then index = 1 end
+    index = math.floor(index)
     if count == 0 then return 0 end
     if index < 1 then return count end
     if index > count then return 1 end
@@ -617,9 +673,11 @@ function GuildRadioFM:Play(index)
     end
 
     local song = self:GetCurrentSong()
-    if not song then
+    if not song or (self.CanPlaySong and not self:CanPlaySong(song)) then
         self.db.isPlaying = false
-        self:Print("No songs are listed in SongList.lua.")
+        self.startedAt = nil
+        self:StopLocalTrack()
+        self:Print(song and "This song belongs to the Secret Frequency." or "No songs are listed in SongList.lua.")
         self:RefreshAll()
         return
     end
@@ -631,7 +689,7 @@ function GuildRadioFM:Play(index)
     self.durationAdvanceStartedAt = nil
 
     if self.PlayLocalTrack then self:PlayLocalTrack(song) end
-    if self.ShowNowPlayingToast then self:ShowNowPlayingToast(song) end
+    if self.db.isPlaying and self.ShowNowPlayingToast then self:ShowNowPlayingToast(song) end
     self:RefreshAll()
 end
 
@@ -718,7 +776,6 @@ function GuildRadioFM:SetVolume(amount)
     self.db.volume = amount
     if self.db.muted then
         if amount > 0 then self.db.previousVolume = amount end
-        self:SetDialogVolume(0)
         self:RefreshAll()
         return
     end
@@ -736,15 +793,17 @@ function GuildRadioFM:ToggleMute()
         self.db.previousVolume = self.db.volume > 0 and self.db.volume or self.db.previousVolume
         self.db.resumeAfterMute = self.db.isPlaying
         if self.StopLocalTrack then self:StopLocalTrack() end
-        self:SetDialogVolume(0)
         self:Print("Muted GuildRadioFM.")
     else
-        self.db.volume = self.db.previousVolume or 50
-        self:SetDialogVolume(self.db.volume)
+        self:SetDialogVolume(self.db.volume or self.db.previousVolume or 50)
         self:Print("Unmuted GuildRadioFM.")
         if self.db.resumeAfterMute then
             self.db.resumeAfterMute = false
-            self:Play()
+            if self.Live and (self.Live.live or self.Live.tuned) then
+                self.Live:ResumeAfterLoading()
+            else
+                self:Play()
+            end
             return
         end
     end
@@ -774,7 +833,7 @@ function GuildRadioFM:AdvanceAfterTrackEnd()
     if self.db.repeatSong then
         self:Play()
     elseif self.db.autoNext then
-        self:Next()
+        if not self.PlayNextInQueue or not self:PlayNextInQueue() then self:Next() end
     else
         self.db.isPlaying = false
         self.startedAt = nil
@@ -784,7 +843,7 @@ function GuildRadioFM:AdvanceAfterTrackEnd()
 end
 
 function GuildRadioFM:HandleSoundFinished(handle)
-    if handle and self.soundHandle and handle ~= self.soundHandle then return end
+    if not self.soundHandle or handle ~= self.soundHandle then return end
     self:AdvanceAfterTrackEnd()
 end
 
@@ -814,7 +873,7 @@ function GuildRadioFM:CreateEventFrame()
     if self.eventFrame then return end
     local frame = CreateFrame("Frame")
     self.eventFrame = frame
-    frame:RegisterEvent("SOUNDKIT_FINISHED")
+    pcall(frame.RegisterEvent, frame, "SOUNDKIT_FINISHED")
     frame:SetScript("OnEvent", function(_, event, ...)
         if event == "SOUNDKIT_FINISHED" then
             GuildRadioFM:HandleSoundFinished(...)
@@ -826,15 +885,12 @@ function GuildRadioFM:CreateEventFrame()
 end
 
 function GuildRadioFM:Reset()
-    GuildRadioFMDB = {}
-    CopyDefaults(defaults, GuildRadioFMDB)
-    self.db = GuildRadioFMDB
-    self:RebuildSongLibrary()
-    self.db.favorites = self.db.favorites or {}
-    self:EnsurePlaylists()
     self:Stop()
-    self:SetDialogVolume(self.db.volume)
-    self:Print("Settings reset.")
+    for key, value in pairs(defaults) do
+        if type(value) ~= "table" and key ~= "currentIndex" then self.db[key] = value end
+    end
+    self:ApplyBackgroundSound()
+    self:Print("Playback and display preferences reset. Library records were kept.")
     self:RefreshAll()
 end
 

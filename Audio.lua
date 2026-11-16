@@ -12,13 +12,12 @@ function GuildRadioFM:PlayLocalTrack(song)
     end
 
     if self.db and self.db.muted then
-        self:SetDialogVolume(0)
         self:Print("Muted. Unmute to hear playback.")
         return
     end
 
-    local willPlay, soundHandle = PlaySoundFile(song.file, "Dialog")
-    if willPlay then
+    local ok, willPlay, soundHandle = pcall(PlaySoundFile, song.file, self.soundChannel or "Dialog")
+    if ok and willPlay then
         self.soundHandle = soundHandle
         self:Print("Playing: " .. (song.title or song.file))
     else

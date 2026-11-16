@@ -1,9 +1,12 @@
-GuildRadioFM v1.0.0
+GuildRadioFM 2.7.0-rc.1 (WoW Forever, Interface 16001)
 
-GuildRadioFM is a local-library-only World of Warcraft addon.
+GuildRadioFM plays local audio and coordinates guild rooms through addon
+messages. Install the GuildRadioFM folder in your Forever client's
+Interface/AddOns directory. Use the same candidate build on every client
+testing a room. See RECOVERY.md for installation caveats and validation.
 
 Put packaged music files here:
-World of Warcraft/_retail_/Interface/AddOns/GuildRadioFM/Songs/
+Interface/AddOns/GuildRadioFM/Songs/
 
 Then list them in SongList.lua with title, file, and optional duration entries.
 
@@ -17,7 +20,7 @@ Easy importer:
 Adding your own songs:
 1. Close WoW or return to the character screen.
 2. Copy MP3 files into:
-   World of Warcraft/_retail_/Interface/AddOns/GuildRadioFM/Songs/
+   Interface/AddOns/GuildRadioFM/Songs/
 3. Open SongList.lua in the GuildRadioFM folder.
 4. Add one line inside GuildRadioFMSongList for each song:
    { title = "My Song", file = "Interface\\AddOns\\GuildRadioFM\\Songs\\My Song.mp3" },

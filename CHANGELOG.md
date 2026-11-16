@@ -1,5 +1,14 @@
 GuildRadioFM Changelog
 
+## 2.7.0-rc.1
+
+- Fix playlist rename and unavailable-control tooltip errors.
+- Add a versioned room protocol with throttling, scoping and replay checks.
+- Restore the solo queue, pack lyrics and Secret Frequency unlocks.
+- Preserve existing user data during schema migration and restyle the player
+  with original TGA textures.
+- See RECOVERY.md for test coverage, compatibility and live verification.
+
 v2.4.2 - GuildRadioFM Live
 
 Live sets (Live tab, /grfm live):

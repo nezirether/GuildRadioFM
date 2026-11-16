@@ -16,10 +16,12 @@ function GuildRadioFM:ShowHelp()
     self:Print("/grfm shuffle, /grfm repeat, /grfm autonext, /grfm mute, /grfm favorite, /grfm unlike")
     self:Print("/grfm favorites, /grfm playliked")
     self:Print("/grfm volume 50, /grfm v 50, /grfm song 1, /grfm reset")
+    self:Print("Local queue: /grfm queue [song number], /grfm unqueue <entry>, /grfm playqueue. Frequencies: /grfm tune <number>.")
     self:Print("Rooms: /grfm live (window), /grfm dj (open a room), /grfm room <name>, /grfm invite (whole guild), /grfm invite <name>, /grfm pass <name>, /grfm endset, /grfm tune, /grfm tuneout, /grfm say <message> (room chat), /grfm unblock")
 end
 
 SlashCmdList["GUILDRADIOFM"] = function(message)
+    if not GuildRadioFM.db then return end
     local raw = Trim(message)
     local lower = string.lower(raw)
 
@@ -45,6 +47,22 @@ SlashCmdList["GUILDRADIOFM"] = function(message)
     if lower == "mute" then GuildRadioFM:ToggleMute() return end
     if lower == "autonext" then GuildRadioFM:ToggleAutoNext() return end
     if lower == "reset" then GuildRadioFM:Reset() return end
+    local frequency = lower:match("^tune%s+(%d+)$")
+    if frequency then GuildRadioFM:TuneFrequency(frequency) return end
+    if lower == "hidden" then GuildRadioFM:Print("Use /grfm tune <frequency> to tune the dial.") return end
+    local queued = lower:match("^queue%s+(%d+)$")
+    if queued then GuildRadioFM:AddToQueue(tonumber(queued)) return end
+    local remove = lower:match("^unqueue%s+(%d+)$")
+    if remove then GuildRadioFM:RemoveFromQueue(remove) return end
+    if lower == "playqueue" then GuildRadioFM:PlayNextInQueue() return end
+    if lower == "queue" then
+        local queue = GuildRadioFM:GetQueue()
+        for i, entry in ipairs(queue) do
+            if type(entry) == "table" then GuildRadioFM:Print(i .. ". " .. tostring(entry.title or entry.songID or "Unavailable")) end
+        end
+        if #queue == 0 then GuildRadioFM:Print("The local queue is empty.") end
+        return
+    end
     if lower == "live" or lower == "requests" then GuildRadioFM:ToggleTab("live") return end
     if lower == "golive" or lower == "dj" then GuildRadioFM.Live:GoLive() return end
     local passTo = string.match(raw, "^[Pp][Aa][Ss][Ss]%s+(%S+)$")
