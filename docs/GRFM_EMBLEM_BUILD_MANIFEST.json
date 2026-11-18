@@ -1,7 +1,8 @@
 {
   "trogdor": {
     "emblem": {
-      "file": "emblem.png"
+      "file": "emblem.png",
+      "native": true
     }
   },
   "alliance": {

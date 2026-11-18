@@ -14,6 +14,38 @@ spec.loader.exec_module(builder)
 
 
 class SkinPipelineTests(unittest.TestCase):
+    def test_signature_texture_paths_and_dimensions(self):
+        lua = LuaRuntime()
+        lua.execute('GuildRadioFM = {}')
+        for name in ('Skins.lua', 'SkinRenderer.lua', 'SkinAssets.lua', 'SignatureArt.lua'):
+            lua.execute((ROOT / name).read_text(encoding='utf-8'))
+        assets = lua.globals().GuildRadioFM.SkinRenderer.assets
+        prefix = 'Interface\\AddOns\\GuildRadioFM\\'
+        self.assertEqual(len(list(assets.keys())), 13)
+        for key, skin in assets.items():
+            if key != 'trogdor':
+                self.assertIsNone(skin.surfaces.outer)
+                self.assertIsNone(skin.surfaces.tab)
+                self.assertIsNone(skin.surfaces.transport)
+            for _, surface in skin.surfaces.items():
+                local = ROOT / surface.path.removeprefix(prefix).replace('\\', '/')
+                with Image.open(local) as image:
+                    image.load()
+                    self.assertEqual(image.size, (surface.width, surface.height))
+
+    def test_supplied_native_logo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / 'output'
+            builder.compile_assets({'trogdor': {'emblem': {'file': 'emblem.png', 'native': True}}},
+                                   ROOT / 'assets', output)
+            with Image.open(ROOT / 'assets/trogdor/emblem.png') as original:
+                with Image.open(output / 'Media/Skins/trogdor/emblem.tga') as exported:
+                    self.assertEqual(original.size, (256, 256))
+                    self.assertEqual(original.tobytes(), exported.tobytes())
+            with self.assertRaises(ValueError):
+                builder.compile_assets({'trogdor': {'emblem': {'file': 'emblem.png'}}},
+                                       ROOT / 'assets', Path(folder) / 'unmarked-output')
+
     def test_emblem_alpha_and_bounds(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)

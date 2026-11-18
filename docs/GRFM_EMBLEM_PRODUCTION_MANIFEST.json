@@ -2,12 +2,12 @@
   "trogdor": {
     "source": "assets/trogdor/emblem.png",
     "output": "Media/Skins/trogdor/emblem.tga",
-    "width": 512,
-    "height": 512,
+    "width": 256,
+    "height": 256,
     "format": "RGBA",
     "background": "transparent",
-    "silhouette": "Torn parchment dragon",
-    "art_direction": "Asymmetric burnt parchment with original green burninating dragon, crimson cloth and bronze pins",
+    "silhouette": "Owner-supplied original Keepers of Trogdor logo, complete composition",
+    "art_direction": "Preserve supplied green dragon, muscular arm, flames, lettering and complete outer silhouette exactly",
     "placements": {
       "main": {
         "width": 164,
@@ -45,7 +45,8 @@
         "y": -8
       }
     },
-    "status": "awaiting original ChatGPT artwork"
+    "status": "original supplied and integrated; Forever screenshot verification pending",
+    "sha256": "c411bc01fd4f51cdc2e10ea8bc71516d14a8f317a3875602a0ccb739f38038be"
   },
   "alliance": {
     "source": "assets/alliance/emblem.png",

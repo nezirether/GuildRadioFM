@@ -33,6 +33,8 @@ GameTooltip = {
 GuildRadioFM = {}
 dofile("Skins.lua")
 dofile("SkinRenderer.lua")
+dofile("SkinAssets.lua")
+dofile("SignatureArt.lua")
 dofile("UI.lua")
 
 local function upvalue(fn, name, seen)

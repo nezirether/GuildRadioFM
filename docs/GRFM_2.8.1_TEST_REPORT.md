@@ -27,3 +27,7 @@ python tests/run_tests.py
 Both Lua 5.1 suites passed again. Added coverage for transport rejection followed by retry after the original scheduling lead, superseding an unsent track, bounded timeout, Request Line retention after timeout, and synchronized mock audio starts after retry. Also checked room-name preservation on host transfer, overlapping loading and cinematic events, malformed pack headers, metadata search through the library, and local queue reordering through the slash command.
 
 Live tests still need to exercise actual C_ChatInfo return values and listener receipt, loading/cinematic event order, audio devices, and UI layout. A successful API submission establishes no per-listener acknowledgment. The fixed scheduling lead remains 1.2 seconds from transmission, so listeners who receive it too late wait for the next start.
+
+## Owner's initial Forever audit
+
+The owner reports 33 working features, 17 untested and 0 confirmed broken, with no reported Lua errors or FPS issues on interface 16001. GRFM_RC2_OWNER_CLIENT_STATUS.md records the confirmed areas and a focused client checklist. Recovery and critical multiplayer edge cases remain pending. This owner report applies to the named RC2 candidate and does not establish visual acceptance of the separate UI builds.

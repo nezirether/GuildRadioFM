@@ -88,14 +88,15 @@ def compile_assets(manifest, source, output):
             filename = assets['emblem']['file']
             path, width, height = image_file(skin, filename)
             image = images[(skin, filename)]
-            if (width, height) != (512, 512):
-                raise ValueError('Production emblem must be 512 by 512 RGBA')
+            native = assets['emblem'].get('native', False)
+            if (width, height) != (512, 512) and not (native and width in (256, 512) and height in (256, 512)):
+                raise ValueError('Use 512 by 512 artwork, or mark the supplied native 256/512 artwork explicitly')
             alpha = image.getchannel('A')
             bounds = alpha.getbbox()
             if bounds is None or alpha.getextrema()[0] != 0:
                 raise ValueError('Emblem needs painted content and a transparent background')
             if any(alpha.getpixel(point) != 0 for point in
-                   ((0, 0), (511, 0), (0, 511), (511, 511))):
+                   ((0, 0), (width-1, 0), (0, height-1), (width-1, height-1))):
                 raise ValueError('Emblem canvas corners must be fully transparent')
             registered['emblem'] = {'path': path, 'width': width, 'height': height,
                                     'mode': 'contain', 'bounds': list(bounds)}
