@@ -12,6 +12,7 @@ function GuildRadioFM:ShowHelp()
     self:Print("/grfm, /grfm play, /grfm stop, /grfm next, /grfm back")
     self:Print("/grfm library, /grfm playlists, /grfm mini, /grfm settings")
     self:Print("/grfm options")
+    self:Print("/grfm skins (open the Skins tab), /grfm skin <name> (e.g. /grfm skin trogdor)")
     self:Print("/grfm addsongs")
     self:Print("/grfm shuffle, /grfm repeat, /grfm autonext, /grfm mute, /grfm favorite, /grfm unlike")
     self:Print("/grfm favorites, /grfm playliked")
@@ -38,6 +39,9 @@ SlashCmdList["GUILDRADIOFM"] = function(message)
     if lower == "playlist" or lower == "playlists" then GuildRadioFM:TogglePlaylistWindow() return end
     if lower == "mini" then GuildRadioFM:ToggleMiniWindow() return end
     if lower == "settings" then GuildRadioFM:ToggleSettingsWindow() return end
+    if lower == "skins" or lower == "skin" then GuildRadioFM:ToggleSkinsWindow() return end
+    local skinName = string.match(raw, "^[Ss][Kk][Ii][Nn]%s+(.+)$")
+    if skinName then GuildRadioFM:SetSkin(skinName) return end
     if lower == "options" or lower == "config" then GuildRadioFM:OpenOptionsPanel() return end
     if lower == "addsong" or lower == "addsongs" or lower == "upload" then GuildRadioFM:ToggleAddSongsWindow() return end
     if lower == "shuffle" then GuildRadioFM:ToggleShuffle() return end

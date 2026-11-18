@@ -8,8 +8,9 @@ local WHITE = "Interface\\Buttons\\WHITE8X8"
 local EMBLEM = MEDIA .. "GuildRadioFM_Emblem.tga"
 local LOGO_FONT = "Fonts\\MORPHEUS.TTF"
 -- the game's own loading-screen art, darkened, behind the window
+-- "forge" is the saved key from earlier builds; it now means "the skin's own background art"
 local BACKDROPS = {
-    { key = "forge", label = "Forge", path = MEDIA .. "GuildRadioFM_Forge.tga" },
+    { key = "forge", label = "Skin" },
     { key = "kalimdor", label = "Kalimdor", path = "Interface\\Glues\\LoadingScreens\\LoadScreenKalimdor" },
     { key = "eastern", label = "Eastern Kingdoms", path = "Interface\\Glues\\LoadingScreens\\LoadScreenEasternKingdom" },
     { key = "none", label = "Plain" },
@@ -35,12 +36,80 @@ local C = {
 local ICONS = { prev = 0, play = 1, stop = 2, next = 3, heart = 4, heartline = 5, shuffle = 6, ["repeat"] = 7,
     volume = 8, mute = 9, plus = 10, close = 11, up = 12, down = 13, minus = 14, live = 15 }
 
+-- ---------- skin bookkeeping ----------
+-- C's tables are recoloured in place by ApplySkin; anything painted from one of them is
+-- remembered here so a skin change (or live preview) repaints it without rebuilding frames.
+local CKEY = {}
+for k, v in pairs(C) do CKEY[v] = k end
+local SKINNED = { tex = {}, text = {}, widgets = {}, faces = {}, badges = {}, trims = {} }
+
 -- ---------- primitives ----------
 local function Tex(parent, layer, c, a)
     local t = parent:CreateTexture(nil, layer or "BACKGROUND")
     t:SetTexture(WHITE)
     t:SetVertexColor(c[1], c[2], c[3], a or c[4] or 1)
+    if CKEY[c] then SKINNED.tex[#SKINNED.tex + 1] = { t, CKEY[c], a } end
     return t
+end
+
+-- a region of the shared Media\Skins\Kit.tga atlas
+local function KitTex(parent, layer, region, sublevel)
+    local t = parent:CreateTexture(nil, layer or "ARTWORK", nil, sublevel)
+    t:SetTexture(R.SKIN_KIT)
+    t:SetTexCoord(R.KitCoords(region))
+    return t
+end
+
+-- forged corners and edges around a frame, tinted with the skin's metal
+local function Trim(frame, corner, thick, layer)
+    local l, r, t, b = R.KitCoords("corner")
+    local trim = {}
+    local spots = {
+        { "TOPLEFT", l, r, t, b }, { "TOPRIGHT", r, l, t, b },
+        { "BOTTOMLEFT", l, r, b, t }, { "BOTTOMRIGHT", r, l, b, t },
+    }
+    local inset = math.floor(corner * 0.55)
+    local el, er, et, eb = R.KitCoords("edgeH")
+    local vl, vr, vt, vb = R.KitCoords("edgeV")
+    local edges = {
+        { "TOPLEFT", inset, 0, "TOPRIGHT", -inset, 0, nil, thick, el, er, et, eb },
+        { "BOTTOMLEFT", inset, 0, "BOTTOMRIGHT", -inset, 0, nil, thick, el, er, eb, et },
+        { "TOPLEFT", 0, -inset, "BOTTOMLEFT", 0, inset, thick, nil, vl, vr, vt, vb },
+        { "TOPRIGHT", 0, -inset, "BOTTOMRIGHT", 0, inset, thick, nil, vr, vl, vt, vb },
+    }
+    for _, e in ipairs(edges) do
+        local x = KitTex(frame, layer or "ARTWORK", "edgeH", 1)
+        x:SetPoint(e[1], e[2], e[3]); x:SetPoint(e[4], e[5], e[6])
+        if e[7] then x:SetWidth(e[7]) end
+        if e[8] then x:SetHeight(e[8]) end
+        x:SetTexCoord(e[9], e[10], e[11], e[12])
+        trim[#trim + 1] = x
+    end
+    for _, s in ipairs(spots) do
+        local x = KitTex(frame, layer or "ARTWORK", "corner", 2)
+        x:SetSize(corner, corner)
+        x:SetPoint(s[1])
+        x:SetTexCoord(s[2], s[3], s[4], s[5])
+        trim[#trim + 1] = x
+    end
+    SKINNED.trims[#SKINNED.trims + 1] = trim
+    return trim
+end
+
+-- seamless tile grid; textures are clipped to the frame by texcoord, so nothing spills out
+local function TileGrid(frame, w, h, size, layer, sublevel)
+    local grid = {}
+    for row = 0, math.ceil(h / size) - 1 do
+        for col = 0, math.ceil(w / size) - 1 do
+            local t = frame:CreateTexture(nil, layer or "BACKGROUND", nil, sublevel)
+            local tw, th = math.min(size, w - col * size), math.min(size, h - row * size)
+            t:SetSize(tw, th)
+            t:SetPoint("TOPLEFT", col * size, -row * size)
+            t:SetTexCoord(0, tw / size, 0, th / size)
+            grid[#grid + 1] = t
+        end
+    end
+    return grid
 end
 
 local function Fill(frame, c, a)
@@ -69,6 +138,7 @@ local function Text(parent, size, c, font, justify)
     fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
     fs:SetJustifyH(justify or "LEFT")
     fs:SetWordWrap(false)
+    if CKEY[c] then SKINNED.text[#SKINNED.text + 1] = { fs, CKEY[c] } end
     return fs
 end
 
@@ -127,6 +197,7 @@ local function IconButton(parent, name, size, onClick, tip, box)
     end)
     Tip(b, tip)
     b:Paint(false)
+    SKINNED.widgets[#SKINNED.widgets + 1] = b
     return b
 end
 
@@ -143,6 +214,9 @@ local function TextButton(parent, label, width, height, onClick, style)
     b:SetSize(width, height or 26)
     b.style = style or "ghost"
     b.bg = Fill(b, C.raised)
+    b.face = KitTex(b, "ARTWORK", "button")   -- forged bevel over the colour fill
+    b.face:SetAllPoints()
+    SKINNED.faces[#SKINNED.faces + 1] = b.face
     b.edge = Outline(b, C.line)
     b.label = Text(b, 12, C.text, BODY_FONT, "CENTER")
     b.label:SetPoint("CENTER")
@@ -164,6 +238,7 @@ local function TextButton(parent, label, width, height, onClick, style)
     b:SetScript("OnClick", function(selfB, ...) if not selfB.disabled then onClick(selfB, ...) end end)
     Tip(b, nil)
     b:Paint(false)
+    SKINNED.widgets[#SKINNED.widgets + 1] = b
     return b
 end
 
@@ -200,7 +275,32 @@ local function Switch(parent, onClick)
     end
     s:SetScript("OnClick", function(selfS) onClick(not selfS.on) end)
     s:SetOn(false)
+    SKINNED.widgets[#SKINNED.widgets + 1] = s
     return s
+end
+
+-- Live DJ badge: forged pill + microphone, tinted by the skin. :SetText("") hides it.
+local function DJBadge(parent, h)
+    h = h or 20
+    local b = CreateFrame("Frame", nil, parent)
+    b:SetHeight(h)
+    b.bg = KitTex(b, "BACKGROUND", "badge")
+    b.bg:SetAllPoints()
+    b.mic = Icon(b, "live", math.floor(h * 0.62))
+    b.mic:SetPoint("LEFT", math.floor(h * 0.42), 0)
+    b.label = Text(b, h >= 20 and 11 or 10, C.text, BODY_FONT)
+    b.label:SetPoint("LEFT", b.mic, "RIGHT", 3, 0)
+    b.label:SetShadowColor(0, 0, 0, 1)
+    b.label:SetShadowOffset(1, -1)
+    function b:SetText(t)
+        if type(t) ~= "string" or t == "" then self:Hide(); return end
+        self.label:SetText(t)
+        self:SetWidth(math.floor(self.label:GetStringWidth() + h * 1.45 + 3))
+        self:Show()
+    end
+    b:Hide()
+    SKINNED.badges[#SKINNED.badges + 1] = b
+    return b
 end
 
 local function Search(parent, width, placeholder, onChange)
@@ -326,7 +426,7 @@ end
 local function EB() return R.Live end
 
 -- ---------- main window ----------
-local TABS = { { "now", "Now Playing" }, { "library", "Library" }, { "playlists", "Playlists" }, { "live", "Live" }, { "settings", "Settings" } }
+local TABS = { { "now", "Now Playing" }, { "library", "Library" }, { "playlists", "Playlists" }, { "live", "Live" }, { "skins", "Skins" }, { "settings", "Settings" } }
 local W, H = 680, 480          -- design size; shown scaled (db.scale, default 0.8)
 
 function R:CreateMainWindow()
@@ -344,21 +444,30 @@ function R:CreateMainWindow()
     local w = self.db.window or {}
     f:SetPoint(w.point or "CENTER", UIParent, w.relativePoint or "CENTER", w.x or 0, w.y or 0)
     Fill(f, C.bg)
-    f.art = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+    f.tiles = TileGrid(f, W, H, 120, "BACKGROUND", 1)      -- skin background
+    f.art = f:CreateTexture(nil, "BACKGROUND", nil, 1)      -- optional loading-screen art
     f.art:SetAllPoints()
     f.shade = Tex(f, "BACKGROUND", C.shade)
     f.shade:SetDrawLayer("BACKGROUND", 2)
     f.shade:SetAllPoints()
-    f.headShade = Tex(f, "BACKGROUND", { 0, 0, 0 }, 0.45)
-    f.headShade:SetTexture(MEDIA .. "GuildRadioFM_ForgeHeader.tga")
-    f.headShade:SetVertexColor(1,1,1,1)
-    f.headShade:SetDrawLayer("BACKGROUND", 3)
+    f.headShade = f:CreateTexture(nil, "BACKGROUND", nil, 3) -- skin banner
     f.headShade:SetPoint("TOPLEFT"); f.headShade:SetPoint("TOPRIGHT"); f.headShade:SetHeight(88)
+    f.headFoot = KitTex(f, "BORDER", "shine")                -- sheen along the banner's foot
+    f.headFoot:SetPoint("TOPLEFT", 0, -82); f.headFoot:SetPoint("TOPRIGHT", 0, -82); f.headFoot:SetHeight(8)
+    f.headFoot:SetVertexColor(0, 0, 0, 0.6)
     Outline(f, C.acc, 0.25)
+    f.trim = Trim(f, 30, 6)
     if UISpecialFrames then table.insert(UISpecialFrames, "GuildRadioFMMainFrame") end
+    -- header art: the signature skin's mascot, or the skin's crest
+    f.mascot = f:CreateTexture(nil, "ARTWORK", nil, 3)
+    f.mascot:SetSize(176, 88)
+    f.mascot:SetPoint("TOPRIGHT", -112, 0)
+    f.crestHead = f:CreateTexture(nil, "ARTWORK", nil, 3)
+    f.crestHead:SetSize(50, 50)
+    f.crestHead:SetPoint("TOPRIGHT", -138, -4)
 
     -- header
-    f.emblem = f:CreateTexture(nil, "ARTWORK")
+    f.emblem = f:CreateTexture(nil, "ARTWORK", nil, 4)
     f.emblem:SetTexture(EMBLEM)
     f.emblem:SetSize(38, 38)
     f.emblem:SetPoint("TOPLEFT", 14, -10)
@@ -375,30 +484,40 @@ function R:CreateMainWindow()
     f.miniBtn = TextButton(f, "Mini player", 82, 22, function() R:ToggleMiniWindow() end, "ghost")
     f.miniBtn.label:SetFont(BODY_FONT, 11, "")
     f.miniBtn:SetPoint("RIGHT", f.close, "LEFT", -6, 0)
-    f.headLive = Text(f, 11, C.live, BODY_FONT, "RIGHT")
-    f.headLive:SetPoint("RIGHT", f.miniBtn, "LEFT", -10, 0)
+    -- Live DJ badge in the header (UpdateLive calls f.headLive:SetText)
+    f.headLive = DJBadge(f, 22)
+    f.headLive:SetPoint("TOPRIGHT", -14, -60)     -- right end of the tab row, clear of the header art
 
-    -- tabs
+    -- tabs: forged plates, the open one lit in the skin's tab colour
     f.tabs = {}
     local x = 18
     for _, t in ipairs(TABS) do
         local key, label = t[1], t[2]
         local b = CreateFrame("Button", nil, f)
+        b.face = KitTex(b, "BACKGROUND", "tab")
+        b.face:SetAllPoints()
         b.label = Text(b, 13, C.dim, BODY_FONT, "CENTER")
         b.label:SetText(label)
-        b.label:SetPoint("CENTER")
-        b:SetSize(b.label:GetStringWidth() + 20, 30)
-        b:SetPoint("TOPLEFT", x, -58)
-        x = x + b:GetWidth() + 4
+        b.label:SetPoint("CENTER", 0, -1)
+        b.label:SetShadowColor(0, 0, 0, 1)
+        b.label:SetShadowOffset(1, -1)
+        b:SetSize(b.label:GetStringWidth() + 24, 28)
+        b:SetPoint("TOPLEFT", x, -57)
+        x = x + b:GetWidth() + 3
         b.bar = Tex(b, "ARTWORK", C.acc)
-        b.bar:SetPoint("BOTTOMLEFT", 8, 0); b.bar:SetPoint("BOTTOMRIGHT", -8, 0); b.bar:SetHeight(2)
+        b.bar:SetPoint("BOTTOMLEFT", 8, 2); b.bar:SetPoint("BOTTOMRIGHT", -8, 2); b.bar:SetHeight(2)
         if key == "live" then
             b.dot = Tex(b, "OVERLAY", C.live)
             b.dot:SetSize(6, 6)
             b.dot:SetPoint("LEFT", b.label, "RIGHT", 4, 4)
             b.dot:Hide()
         end
-        function b:Hover(h) if R.db.tab ~= key then SetColor(self.label, h and C.text or C.dim) end end
+        b.key = key
+        function b:Hover(h)
+            self.hover = h
+            R:PaintTab(self)
+            if R.db.tab ~= key then SetColor(self.label, h and C.text or C.dim) end
+        end
         Tip(b, nil)
         b:SetScript("OnClick", function() R:ShowTab(key) end)
         f.tabs[key] = b
@@ -418,7 +537,10 @@ function R:CreateMainWindow()
     self:BuildLibraryPage(f.pages.library)
     self:BuildPlaylistPage(f.pages.playlists)
     self:BuildLivePage(f.pages.live)
+    self:BuildSkinsPage(f.pages.skins)
     self:BuildSettingsPage(f.pages.settings)
+    -- a preview never outlives the window
+    f:SetScript("OnHide", function() if R.previewSkin then R.previewSkin = nil; R:ApplySkin() end end)
 
     local acc = 0
     f:SetScript("OnUpdate", function(_, el)
@@ -429,7 +551,7 @@ function R:CreateMainWindow()
     end)
     self:AddScaleGrip(f, "scale")
     f:SetScale(self.db.scale or 0.8)
-    self:ApplyBackdrop()
+    self:ApplySkin(true)
     f:Hide()
     self:ShowTab(self.db.tab or "now", true)
 end
@@ -488,24 +610,49 @@ end
 function R:ApplyBackdrop()
     local f = self.mainFrame
     if not f then return end
+    local skin = self:GetActiveSkin()
     local choice = self.db.backdrop or "forge"
-    local path
-    for _, b in ipairs(BACKDROPS) do if b.key == choice then path = b.path end end
-    if path then
-        f.art:SetTexture(path)
-        -- loading screens are 4:3; trim top and bottom to the window's shape
-        local cut = (1 - (4 / 3) / (W / H)) / 2
-        if choice == "forge" then
-            f.art:SetTexCoord(0,1,0,1)
-            f.shade:SetAlpha(0.15)
+    local path, known
+    for _, b in ipairs(BACKDROPS) do if b.key == choice then path, known = b.path, true end end
+    if not known then choice = "forge" end
+    for _, t in ipairs(f.tiles) do
+        if choice == "forge" and skin.art.tile then
+            t:SetTexture(skin.art.tile)
+            t:SetVertexColor(1, 1, 1, skin.tileAlpha or 0.6)
+            t:Show()
         else
-            f.art:SetTexCoord(0, 1, cut, 1 - cut)
-            f.shade:SetAlpha(1)
+            t:Hide()
         end
+    end
+    if path then
+        -- the game's loading screens are 4:3; trim top and bottom to the window's shape
+        local cut = (1 - (4 / 3) / (W / H)) / 2
+        f.art:SetTexture(path)
+        f.art:SetTexCoord(0, 1, cut, 1 - cut)
         f.art:Show()
+        f.shade:SetAlpha(1)
     else
         f.art:Hide()
-        f.shade:SetAlpha(0)
+        f.shade:SetAlpha(choice == "forge" and 1 or 0)   -- palette shade keeps text readable over the tile
+    end
+end
+
+-- tab plate colour: open = skin tab colour, hovered = a touch brighter, closed = dark metal
+function R:PaintTab(b)
+    local skin = self:GetActiveSkin()
+    local on = self.db and self.db.tab == b.key
+    local c = on and skin.tab or skin.tabOff
+    local lift = (b.hover and not on) and 0.06 or 0
+    b.face:SetVertexColor(math.min(1, c[1] + lift), math.min(1, c[2] + lift), math.min(1, c[3] + lift), 1)
+end
+
+function R:PaintTabs()
+    local f = self.mainFrame
+    if not f then return end
+    for k, b in pairs(f.tabs) do
+        self:PaintTab(b)
+        SetColor(b.label, k == self.db.tab and C.text or C.dim)
+        if k == self.db.tab then b.bar:Show() else b.bar:Hide() end
     end
 end
 
@@ -515,10 +662,7 @@ function R:ShowTab(key, quiet)
     if not f.pages[key] then key = "now" end
     self.db.tab = key
     for k, p in pairs(f.pages) do if k == key then p:Show() else p:Hide() end end
-    for k, b in pairs(f.tabs) do
-        SetColor(b.label, k == key and C.text or C.dim)
-        if k == key then b.bar:Show() else b.bar:Hide() end
-    end
+    self:PaintTabs()
     if not quiet then f:Show() end
     self:RefreshAll()
 end
@@ -537,6 +681,7 @@ function R:TogglePlaylistWindow() self:ToggleTab("playlists") end
 function R:ToggleSettingsWindow() self:ToggleTab("settings") end
 function R:ToggleAddSongsWindow() self:ToggleTab("settings") end
 function R:ToggleLiveWindow() self:ToggleTab("live") end
+function R:ToggleSkinsWindow() self:ToggleTab("skins") end
 
 local function PageShown(key)
     local f = R.mainFrame
@@ -564,24 +709,35 @@ function R:BuildNowPage(p)
     art:SetSize(170, 170)
     art:SetPoint("TOPLEFT", 0, -6)
     Fill(art, C.surface)
+    art.tile = art:CreateTexture(nil, "BACKGROUND", nil, 1)   -- skin texture inside the frame
+    art.tile:SetPoint("TOPLEFT", 1, -1); art.tile:SetPoint("BOTTOMRIGHT", -1, 1)
+    art.halo = KitTex(art, "BORDER", "glow")
+    art.halo:SetSize(170, 170)
+    art.halo:SetPoint("CENTER", 0, 6)
     Outline(art, C.line)
-    art.glow = art:CreateTexture(nil, "ARTWORK")
+    art.trim = Trim(art, 18, 4)
+    art.glow = art:CreateTexture(nil, "ARTWORK")             -- skin crest, pulses while playing
     art.glow:SetTexture(EMBLEM)
     art.glow:SetSize(128, 128)
     art.glow:SetPoint("CENTER", 0, 6)
-    art.badge = Text(art, 10, C.live, BODY_FONT, "CENTER")
-    art.badge:SetPoint("BOTTOM", 0, 10)
+    art.badge = DJBadge(art, 20)
+    art.badge:SetPoint("BOTTOM", 0, 8)
     p.art = art
     local t = 0
     art:SetScript("OnUpdate", function(_, el)
         t = t + el
         local a = R.db.isPlaying and (0.8 + 0.2 * math.sin(t * 2.4)) or 0.45
-        art.glow:SetAlpha(a)
+        art.glow:SetAlpha(math.min(1, a + 0.25))
+        art.halo:SetAlpha(R.db.isPlaying and (0.3 + 0.2 * math.sin(t * 2.4)) or 0.12)
     end)
+    -- flourish beside the "Now playing" line (anchored to the eyebrow once it exists)
+    p.decor = p:CreateTexture(nil, "ARTWORK")
+    p.decor:SetSize(64, 32)
 
     local x = 196
     p.eyebrow = Eyebrow(p, "Now playing")
     p.eyebrow:SetPoint("TOPLEFT", x, -14)
+    p.decor:SetPoint("LEFT", p.eyebrow, "RIGHT", 6, 1)
     p.title = Text(p, 22, C.acc, TITLE_FONT)
     p.title:SetShadowColor(0, 0, 0, 1)
     p.title:SetShadowOffset(1, -1)
@@ -614,11 +770,14 @@ function R:BuildNowPage(p)
     p.prev = IconButton(mid, "prev", 18, function() R:Back() end, "Previous")
     p.play = CreateFrame("Button", nil, mid)
     p.play:SetSize(50, 50)
-    p.play.bg = Fill(p.play, C.acc)
+    p.play.bg = KitTex(p.play, "BACKGROUND", "disc")   -- forged disc in the accent colour
+    p.play.bg:SetPoint("TOPLEFT", -4, 4); p.play.bg:SetPoint("BOTTOMRIGHT", 4, -4)
+    p.play.bg:SetVertexColor(C.acc[1], C.acc[2], C.acc[3], 1)
     p.play.icon = Icon(p.play, "play", 22)
     p.play.icon:SetPoint("CENTER", 1, 0)
     p.play.icon:SetVertexColor(0.05, 0.04, 0.09)
-    function p.play:Hover(h) self.bg:SetVertexColor(C.acc[1] + (h and 0.08 or 0), C.acc[2] + (h and 0.08 or 0), math.min(1, C.acc[3]), 1) end
+    function p.play:Hover(h) self.bg:SetVertexColor(math.min(1, C.acc[1] + (h and 0.08 or 0)), math.min(1, C.acc[2] + (h and 0.08 or 0)), math.min(1, C.acc[3]), 1) end
+    SKINNED.widgets[#SKINNED.widgets + 1] = { Paint = function() p.play:Hover(false) end }
     Tip(p.play, nil)
     p.play:SetScript("OnClick", function() if R.db.isPlaying then R:Stop() else R:Play() end end)
     p.next = IconButton(mid, "next", 18, function() R:Next() end, "Next")
@@ -695,7 +854,7 @@ function R:UpdateNowPage()
     p.vol.icon:SetIcon(self.db.muted and "mute" or "volume")
     if not p.volume.dragging then p.volume:SetValue(self.db.muted and 0 or self.db.volume) end
     p.volText:SetText(self.db.muted and "muted" or (tostring(self.db.volume) .. "%"))
-    p.art.badge:SetText(eb and eb.live and "ON AIR" or (eb and eb.tuned and "LIVE" or ""))
+    p.art.badge:SetText(eb and eb.live and "ON AIR" or (eb and eb.tuned and "LIVE DJ" or ""))
 
     local dj = eb and eb:CurrentDJ()
     if eb and (eb.tuned or (dj and not eb.live)) then
@@ -1500,6 +1659,192 @@ function R:FillInviteMenu()
     m:SetHeight(30 + shown * 24)
 end
 
+-- ---------- Skins ----------
+-- 13 cards. Hover previews a skin on the whole addon, leaving restores yours, click keeps it.
+function R:BuildSkinsPage(p)
+    p.head = Eyebrow(p, "Skins")
+    p.head:SetPoint("TOPLEFT", 0, -4)
+    p.note = Text(p, 11, C.faint, BODY_FONT, "RIGHT")
+    p.note:SetPoint("TOPRIGHT", 0, -4)
+    p.note:SetText("Hover to preview  ·  click to keep  ·  saved for this account")
+    p.current = Text(p, 12, C.text, BODY_FONT)
+    p.current:SetPoint("LEFT", p.head, "RIGHT", 10, 0)
+    p.cards = {}
+    local cols, gap, ch = 4, 8, 72
+    local cw = math.floor((W - 36 - gap * (cols - 1)) / cols)
+    for i, s in ipairs(self.SkinList) do
+        local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+        local b = CreateFrame("Button", nil, p)
+        b:SetSize(cw, ch)
+        b:SetPoint("TOPLEFT", col * (cw + gap), -22 - row * (ch + gap))
+        Fill(b, C.surface)
+        b.thumb = b:CreateTexture(nil, "ARTWORK")
+        b.thumb:SetPoint("TOPLEFT", 1, -1); b.thumb:SetPoint("TOPRIGHT", -1, -1); b.thumb:SetHeight(40)
+        b.thumb:SetTexture(s.art.banner)
+        b.thumb:SetTexCoord(0.42, 1, 0, 0.64)   -- the art band above the tab ledge
+        b.crest = b:CreateTexture(nil, "OVERLAY")
+        b.crest:SetSize(34, 34)
+        b.crest:SetPoint("LEFT", b.thumb, "LEFT", 4, 0)
+        b.crest:SetTexture(s.art.crest)
+        b.name = Text(b, 12, C.text, TITLE_FONT)
+        b.name:SetPoint("BOTTOMLEFT", 8, 9)
+        b.name:SetText(i .. ". " .. s.name)
+        b.tag = Text(b, 10, C.acc, BODY_FONT, "RIGHT")
+        b.tag:SetPoint("BOTTOMRIGHT", -8, 10)
+        -- the skin's own colours, so a card reads correctly whatever skin is active
+        b.chips = {}
+        local sw = { s.tab, s.palette.acc, s.palette.live }
+        for k, c in ipairs(sw) do
+            local chip = b:CreateTexture(nil, "OVERLAY")
+            chip:SetTexture(WHITE)
+            chip:SetVertexColor(c[1], c[2], c[3], 1)
+            chip:SetSize(7, 7)
+            chip:SetPoint("TOPRIGHT", b.thumb, "TOPRIGHT", -4 - (k - 1) * 9, -4)
+            b.chips[k] = chip
+        end
+        b.edge = Outline(b, C.line)
+        b.key = s.key
+        b.skin = s
+        function b:Hover(h)
+            if h then R:PreviewSkin(self.key) else R:EndPreview() end
+            if GameTooltip and h then
+                GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+                GameTooltip:SetText(self.skin.name, 1, 1, 1)
+                GameTooltip:AddLine(self.skin.blurb or "", 0.8, 0.8, 0.8, true)
+                GameTooltip:Show()
+            end
+        end
+        Tip(b, nil)
+        b:SetScript("OnClick", function(selfB) R:SetSkin(selfB.key) end)
+        p.cards[i] = b
+    end
+end
+
+function R:UpdateSkinsWindow()
+    if not PageShown("skins") then return end
+    local p = self.mainFrame.pages.skins
+    local saved = self.SkinByKey[self.db.skin] or self.SkinByKey[self.SKIN_DEFAULT]
+    p.current:SetText(self.previewSkin and self.SkinByKey[self.previewSkin] and
+        ("Previewing " .. self.SkinByKey[self.previewSkin].name .. "  ·  yours: " .. saved.name) or saved.name)
+    for _, b in ipairs(p.cards) do
+        local chosen = b.key == saved.key
+        local looking = b.key == self.previewSkin
+        for _, e in ipairs(b.edge) do
+            local c = (chosen or looking) and C.acc or C.line
+            e:SetVertexColor(c[1], c[2], c[3], chosen and 1 or (looking and 0.7 or c[4] or 1))
+        end
+        local tag = chosen and "Selected" or (b.skin.tag or "")
+        b.tag:SetText(tag)
+        SetColor(b.tag, chosen and C.acc2 or C.acc)
+    end
+end
+
+function R:PreviewSkin(key)
+    if not self.SkinByKey[key] then return end
+    self.previewToken = (self.previewToken or 0) + 1
+    if self.previewSkin == key then return end
+    self.previewSkin = key
+    self:ApplySkin()
+end
+
+-- moving straight from one card to the next keeps previewing without flashing back
+function R:EndPreview()
+    self.previewToken = (self.previewToken or 0) + 1
+    local token = self.previewToken
+    self.After(0.08, function()
+        if R.previewToken == token and R.previewSkin then
+            R.previewSkin = nil
+            R:ApplySkin()
+        end
+    end)
+end
+
+function R:SetSkin(name)
+    local s = self:FindSkin(name)
+    if not s then
+        local names = {}
+        for _, k in ipairs(self.SkinList) do names[#names + 1] = k.name end
+        return self:Print("Unknown skin. Skins: " .. table.concat(names, ", "))
+    end
+    self.db.skin = s.key
+    self.previewSkin = nil
+    self.previewToken = (self.previewToken or 0) + 1
+    self:ApplySkin()
+    self:Print("Skin: " .. s.name)
+end
+
+local function SetTex(t, path, fallback)
+    if not t then return end
+    path = path or fallback
+    if path then t:SetTexture(path); t:Show() else t:Hide() end
+end
+
+-- textures and tints for whatever windows exist right now
+function R:ApplySkinArt()
+    local s = self:GetActiveSkin()
+    local art = s.art or {}
+    local metal = s.metal or { 0.6, 0.5, 0.4 }
+    for _, trim in ipairs(SKINNED.trims) do
+        for _, t in ipairs(trim) do t:SetVertexColor(metal[1], metal[2], metal[3], 1) end
+    end
+    for _, face in ipairs(SKINNED.faces) do face:SetVertexColor(1, 1, 1, s.bevel or 0.8) end
+    for _, b in ipairs(SKINNED.badges) do
+        local c = s.badge or s.palette.live
+        b.bg:SetVertexColor(c[1], c[2], c[3], 1)
+        b.mic:SetVertexColor(1, 1, 1, 1)
+        b.label:SetTextColor(1, 0.97, 0.92, 1)
+    end
+    local f = self.mainFrame
+    if f then
+        SetTex(f.headShade, art.banner)
+        f.headShade:SetVertexColor(1, 1, 1, 1)
+        -- banners carry their own emblem; a separate header mascot/crest is opt-in per skin
+        if art.mascot then SetTex(f.mascot, art.mascot) else f.mascot:Hide() end
+        if s.headerCrest then SetTex(f.crestHead, art.crest, EMBLEM) else f.crestHead:Hide() end
+        f.logo:SetFont(s.font or LOGO_FONT, 26, "")
+        local now = f.pages.now
+        SetTex(now.art.glow, art.crest, EMBLEM)
+        SetTex(now.art.tile, art.tile)
+        now.art.tile:SetVertexColor(1, 1, 1, 0.55)
+        now.art.halo:SetVertexColor(s.palette.acc[1], s.palette.acc[2], s.palette.acc[3], 1)
+        SetTex(now.decor, art.decor)
+        self:ApplyBackdrop()
+        self:PaintTabs()
+    end
+    local m = self.miniFrame
+    if m then
+        SetTex(m.banner, art.banner)
+        if art.banner then m.banner:SetTexCoord(0.42, 1, 0, 0.64) end
+        SetTex(m.icon, art.crest, EMBLEM)
+    end
+    for _, card in ipairs(SKINNED.cards or {}) do SetTex(card.icon, art.crest, EMBLEM) end
+end
+
+-- recolour everything in place, then swap the artwork
+function R:ApplySkin(quiet)
+    if not self.db then return end
+    local s = self:GetActiveSkin()
+    self.appliedSkin = s.key
+    for k, c in pairs(C) do
+        local src = s.palette[k]
+        if src then c[1], c[2], c[3], c[4] = src[1], src[2], src[3], src[4] or 1 end
+    end
+    for _, e in ipairs(SKINNED.tex) do
+        local c = C[e[2]]
+        e[1]:SetVertexColor(c[1], c[2], c[3], e[3] or c[4] or 1)
+    end
+    for _, e in ipairs(SKINNED.text) do
+        local c = C[e[2]]
+        e[1]:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+    end
+    for _, w in ipairs(SKINNED.widgets) do
+        if w.Paint then w:Paint(false) end
+        if w.on ~= nil and w.SetOn then w:SetOn(w.on) end
+    end
+    self:ApplySkinArt()
+    if not quiet then self:RefreshAll() end
+end
+
 -- ---------- Settings ----------
 function R:BuildSettingsPage(p)
     local rows = {
@@ -1582,13 +1927,18 @@ function R:UpdateSettingsWindow()
     for _, s in ipairs(p.switches) do s:SetOn(s.get() and true or false) end
     if not p.size.dragging then p.size:SetValue(((self.db.scale or 0.8) - 0.5) / 0.9 * 100) end
     p.sizeText:SetText(math.floor((self.db.scale or 0.8) * 100 + 0.5) .. "%")
-    for _, pill in ipairs(p.bgPills) do pill:SetOn((self.db.backdrop or "kalimdor") == pill.key) end
+    for _, pill in ipairs(p.bgPills) do pill:SetOn((self.db.backdrop or "forge") == pill.key) end
     if not p.volume.dragging then p.volume:SetValue(self.db.muted and 0 or self.db.volume) end
     p.volText:SetText(self.db.muted and "muted" or (tostring(self.db.volume) .. "%"))
 end
 
 function R:UpdateMainWindow()
+    -- a reset or a saved-variable change can move the skin underneath us
+    if self.db and self.appliedSkin ~= self:GetActiveSkin().key and (self.mainFrame or self.miniFrame) then
+        return self:ApplySkin()
+    end
     self:UpdateLive()
+    self:UpdateSkinsWindow()
 end
 
 -- ---------- mini player ----------
@@ -1607,13 +1957,29 @@ function R:CreateMiniWindow()
     local w = self.db.miniWindow or {}
     m:SetPoint(w.point or "CENTER", UIParent, w.relativePoint or "CENTER", w.x or 0, w.y or -180)
     Fill(m, C.bg)
+    m.banner = m:CreateTexture(nil, "BACKGROUND", nil, 1)   -- skin banner scene, dimmed under the text
+    m.banner:SetAllPoints()
+    m.dim = m:CreateTexture(nil, "BACKGROUND", nil, 2)
+    m.dim:SetTexture(WHITE)
+    m.dim:SetAllPoints()
+    -- left-to-right dimming; the gradient API changed between client generations
+    if m.dim.SetGradientAlpha then
+        m.dim:SetGradientAlpha("HORIZONTAL", 0, 0, 0, 0.82, 0, 0, 0, 0.62)
+    elseif m.dim.SetGradient and CreateColor then
+        m.dim:SetVertexColor(1, 1, 1, 1)
+        m.dim:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, 0.82), CreateColor(0, 0, 0, 0.62))
+    else
+        m.dim:SetVertexColor(0, 0, 0, 0.6)
+    end
     Outline(m, C.line)
-    m.icon = m:CreateTexture(nil, "ARTWORK")
+    m.trim = Trim(m, 16, 3)
+    m.icon = m:CreateTexture(nil, "ARTWORK", nil, 3)
     m.icon:SetTexture(EMBLEM)
-    m.icon:SetSize(32, 32)
-    m.icon:SetPoint("LEFT", 10, 1)
+    m.icon:SetSize(34, 34)
+    m.icon:SetPoint("LEFT", 9, 1)
     m.play = IconButton(m, "play", 14, function() if R.db.isPlaying then R:Stop() else R:Play() end end, nil, 26)
     m.next = IconButton(m, "next", 12, function() R:Next() end, "Next", 24)
+    m.prev = IconButton(m, "prev", 12, function() R:Back() end, "Previous", 24)
     m.close = IconButton(m, "close", 10, function() R:ShowMini(false) end, nil, 20)
     m.close:SetPoint("TOPRIGHT", -2, -2)
     m.close:SetAlpha(0)
@@ -1621,18 +1987,19 @@ function R:CreateMiniWindow()
     m.open:SetPoint("TOPRIGHT", m.close, "TOPLEFT", 0, 0)
     m.next:SetPoint("RIGHT", -44, -1)
     m.play:SetPoint("RIGHT", m.next, "LEFT", -2, 0)
+    m.prev:SetPoint("RIGHT", m.play, "LEFT", -2, 0)
     m.eyebrow = Text(m, 9, C.faint)
     m.eyebrow:SetPoint("TOPLEFT", 50, -10)
     m.title = Text(m, 13, C.acc, TITLE_FONT)
     m.title:SetPoint("TOPLEFT", 50, -23)
-    m.title:SetPoint("RIGHT", m.play, "LEFT", -6, 0)
-    m.eyebrow:SetPoint("RIGHT", m.play, "LEFT", -6, 0)
+    m.title:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
+    m.eyebrow:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
     m.barFill = Tex(m, "OVERLAY", C.acc)
     m.barFill:SetPoint("BOTTOMLEFT", 0, 0)
     m.barFill:SetHeight(2)
     m:SetScript("OnMouseUp", function(_, b) if b == "RightButton" then R:ToggleMainWindow() end end)
     -- grab it anywhere, buttons included; the close button only shows while the mouse is over the player
-    for _, b in ipairs({ m.play, m.next, m.close, m.open }) do DragThrough(b, m, function() return R.db.miniWindow end) end
+    for _, b in ipairs({ m.prev, m.play, m.next, m.close, m.open }) do DragThrough(b, m, function() return R.db.miniWindow end) end
     local hoverAcc = 0
     m.hoverWatch = CreateFrame("Frame", nil, m)
     m.hoverWatch:SetScript("OnUpdate", function(_, el)
@@ -1649,6 +2016,7 @@ function R:CreateMiniWindow()
     m.grip:SetSize(12, 12)
     m:SetScale(self.db.miniScale or 0.9)
     m:Hide()
+    self:ApplySkinArt()
 end
 
 function R:ShowMini(on)
@@ -1686,9 +2054,11 @@ local function Card(name, width)
     t.accent = Tex(t, "ARTWORK", C.acc)
     t.accent:SetPoint("TOPLEFT"); t.accent:SetPoint("BOTTOMLEFT"); t.accent:SetWidth(2)
     t.icon = t:CreateTexture(nil, "ARTWORK")
-    t.icon:SetTexture(EMBLEM)
+    t.icon:SetTexture(R:GetActiveSkin().art.crest or EMBLEM)
     t.icon:SetSize(32, 32)
     t.icon:SetPoint("LEFT", 12, 0)
+    SKINNED.cards = SKINNED.cards or {}
+    SKINNED.cards[#SKINNED.cards + 1] = t
     t.eyebrow = Text(t, 9, C.faint)
     t.eyebrow:SetPoint("TOPLEFT", 52, -11)
     t.title = Text(t, 14, C.text)

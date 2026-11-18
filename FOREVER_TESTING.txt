@@ -13,3 +13,10 @@ Changes: experimental legacy TOC 11200; removed Retail BackdropTemplate referenc
 
 Known uncertainties: WoW Forever API level, MP3 support, sound handles, slider/templates, and UI functions.
 No multiplayer music streaming or arbitrary file access is implemented.
+
+2.8.0-rc.1 skin checks (not yet done in a client):
+- /grfm skins: all 13 cards show a banner thumbnail and crest. Hover each: header, background, tabs,
+  play disc, crest, flourish and mini player change; moving off restores your skin. Click keeps it after /reload.
+- Trogdor: dragon visible in the header, not clipped by the tab row; Live DJ badge readable at the tab row's right end.
+- Check textures are not green/missing (that would mean the client rejected a TGA) and scale cleanly at 50-140%.
+- Mini player text stays readable over each banner.

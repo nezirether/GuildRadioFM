@@ -1,5 +1,41 @@
 GuildRadioFM Changelog
 
+## 2.8.0-rc.2 - mini player
+
+- Mini player: Previous button immediately left of Play/Stop (same Back action as the main window).
+  It is a standard skinned icon button, so it follows every skin's colours and hover, and it drags the
+  mini player like the other buttons.
+- Mini player: slightly stronger dimming on the right so the controls stay readable over busy banners.
+- No changes to skins' textures, audio, Live DJ rooms or saved settings.
+
+## 2.8.0-rc.1 - skins
+
+- New Skins tab with 13 skins: Trogdor (signature), Alliance, Horde, Undercity, Org, Stormwind,
+  Thunder Bluff, Darnassus, Iron Forge, Blood Moon, Sleek, Classic (default) and Retail.
+- Each skin has its own header banner, tiled background, crest and Now Playing flourish, plus tints for
+  the shared forged frame corners, tab plates, button bevels, play disc and Live DJ badge (Media/Skins/Kit.tga).
+- Skin art (banners, backgrounds, Now Playing flourishes and most crests) is cut from the owner's GRFM skin
+  concept sheet by tools/import_concept.py. Faction emblems in the Alliance, Horde and Stormwind strips are
+  covered with the skin's own crest. Banner art sits above the tab row so it is never hidden behind tabs.
+- Trogdor signature skin: the concept's fire-breathing dragon banner, lava-stone background, dragon-head crest,
+  flame flourish, charred-iron and bronze trim.
+- Hover a skin card for a live preview of the whole addon; click to keep it. /grfm skins, /grfm skin <name>.
+  The choice is saved in GuildRadioFMDB.skin; an unknown saved skin is left untouched and Classic is shown.
+- Live DJ badge (forged pill + microphone) in the header tab row and on the Now Playing crest.
+- Mini player shows the skin banner, crest and trim. Pop-up cards use the skin crest.
+- Settings > Background "Forge" is now "Skin" (same saved key), so existing choices carry over.
+- Join points are disabled in code as well as data: late listeners always wait for the next song.
+- Removed unused GuildRadioFM_Forge.tga, GuildRadioFM_ForgeHeader.tga and GuildRadioFM_Icon.png.
+- Added tests/ (headless Lua 5.1 suite) and tools/make_skins.py, tools/preview_skins.py.
+- In-game testing remains required.
+
+## 2.7.0-rc.3 - slim audio rollback (UI work baseline)
+
+- Remove offset audio join points; late listeners now wait for the next song.
+- Preserve the existing functioning Live DJ Rooms, standard synchronized song starts, and all original packaged audio.
+- No additional audio segments or generator are included.
+- In-game testing remains required.
+
 ## 2.7.0-rc.1
 
 - Fix playlist rename and unavailable-control tooltip errors.

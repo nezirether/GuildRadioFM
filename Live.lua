@@ -3,8 +3,8 @@
 -- Nothing is streamed. Every player runs the same shared clock (the server's clock, refined to
 -- frame precision). The DJ schedules each song to start at an exact moment ~1 second ahead and
 -- tells the guild; every tuned-in player starts their own packaged copy at that same moment.
--- Someone who tunes in mid-song starts at the next join point (a pre-cut copy of the song that
--- begins 30, 60, 90... seconds in, see JoinPoints.lua), landing exactly in time with everyone.
+-- Mid-song joining is disabled to keep the addon package small. Late listeners wait
+-- for the next song; scheduled song starts remain synchronized across the room.
 --
 -- Several guildmates can be live at once; listeners pick a set. A DJ can pass the set to one of
 -- their listeners ("Pass host"): the queue moves with it and everyone tuned in follows the new host
@@ -114,7 +114,11 @@ end
 
 -- ---------- join points ----------
 -- GuildRadioFMJoins[key] = { step = 30, points = { 30, 60, ... }, dir = "Interface\\AddOns\\...\\" }
+-- Mid-song join copies are retired (slim build): a late listener always waits for the next
+-- song. This stays off even if an old JoinPoints table or pack still lists cut files.
+EB.allowJoinPoints = false
 function EB:JoinPoint(key, position)
+    if not self.allowJoinPoints then return nil end
     local j = GuildRadioFMJoins and GuildRadioFMJoins[key]
     if not j then return nil end
     for _, p in ipairs(j.points) do
@@ -841,8 +845,8 @@ end
 
 -- ---------- loading screens ----------
 -- WoW cuts every sound on a loading screen (entering or leaving an instance). Afterwards, pick the song
--- back up where it would be now: in a room, rejoin the DJ in sync; alone, start the next 30-second join
--- cut of the same song (or restart it if it has none), so the timer and the music still line up.
+-- back up where it would be now: in a room, rejoin the DJ in sync (or wait for the next song);
+-- alone, restart the same song from the top. Mid-song join cuts are no longer shipped.
 function EB:ResumeAfterLoading()
     if not R.db then return end
     if self.tuned then

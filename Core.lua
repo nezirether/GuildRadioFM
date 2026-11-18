@@ -1,5 +1,5 @@
 GuildRadioFM = GuildRadioFM or {}
-GuildRadioFM.version = "2.7.0-rc.1"
+GuildRadioFM.version = "2.8.0-rc.2"
 GuildRadioFM.soundChannel = "Dialog"
 
 -- Credit, in plain text (Blizzard's add-on policy: no hidden or obfuscated code).
@@ -39,6 +39,7 @@ local defaults = {
     scale = 0.8,
     miniScale = 0.9,
     backdrop = "forge",
+    skin = "classic",
     toast = true,
     invites = true,
     miniShown = false,
