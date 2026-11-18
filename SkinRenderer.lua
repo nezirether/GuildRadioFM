@@ -135,7 +135,8 @@ function Renderer:Paint(binding)
         used = used+1
         local texture = binding.parts[used]
         if not texture then
-            texture = binding.frame:CreateTexture(nil, binding.layer or "ARTWORK", nil, binding.sublevel or 0)
+            local owner = binding.frame.skinTextureParent or binding.frame
+            texture = owner:CreateTexture(nil, binding.layer or "ARTWORK", nil, binding.sublevel or 0)
             binding.parts[used] = texture
         end
         if not loadTexture(texture, d.path) then failed = true; return end
@@ -156,8 +157,10 @@ function Renderer:Paint(binding)
         local vs = {uv[3],uv[3]+t/d.height,uv[4]-b/d.height,uv[4]}
         for row=1,3 do
             for col=1,3 do
-                piece(xs[col],ys[row],xs[col+1]-xs[col],ys[row+1]-ys[row],
-                    us[col],us[col+1],vs[row],vs[row+1])
+                if not d.borderOnly or row ~= 2 or col ~= 2 then
+                    piece(xs[col],ys[row],xs[col+1]-xs[col],ys[row+1]-ys[row],
+                        us[col],us[col+1],vs[row],vs[row+1])
+                end
             end
         end
     elseif mode == "tile" then

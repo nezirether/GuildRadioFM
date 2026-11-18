@@ -1,6 +1,8 @@
 local function noop() end
 local function widget(parent)
-    local w={scripts={},width=680,height=480,text="",visible=true,parent=parent}
+    local w={scripts={},points={},width=680,height=480,text="",visible=true,parent=parent}
+    function w:SetPoint(...) self.points[#self.points+1]={...} end
+    function w:ClearAllPoints() self.points={} end
     function w:SetScript(name,fn) self.scripts[name]=fn end
     function w:HookScript(name,fn)
         local old=self.scripts[name]
@@ -77,4 +79,31 @@ end
 r.songs[1].title=string.rep("Long song title ",20)
 r:RefreshAll()
 assert(r.db.skin=="retail")
+r:SetSkin("trogdor")
+local f=r.mainFrame
+assert(f:GetWidth()==1040 and f:GetHeight()==620 and #f.navOrder==6)
+assert(f.pages.now.points[1][4]==216 and f.pages.now.points[2][4]==-308)
+r:SetFrameScale(f,"scale",1.4)
+assert(f:GetScale()*1064<=env.UIParent:GetWidth()+0.001)
+r:ShowTab("now")
+for i=1,10 do assert(r:AddToQueue(i)) end
+local queue=f.queuePanel
+assert(queue.rows[1].index==1)
+queue.scripts.OnMouseWheel(queue,-3)
+assert(queue.rows[1].index==4)
+queue.rows[2].scripts.OnClick(queue.rows[2])
+local title=r:GetQueue()[5].title
+queue.up.scripts.OnClick(queue.up,"LeftButton")
+assert(r:GetQueue()[4].title==title)
+queue.rows[2].remove.scripts.OnClick(queue.rows[2].remove,"LeftButton")
+assert(#r:GetQueue()==9)
+f.footer.play.scripts.OnClick(f.footer.play,"LeftButton")
+assert(r.db.isPlaying)
+f.footer.play.scripts.OnClick(f.footer.play,"LeftButton")
+assert(not r.db.isPlaying)
+r:ShowTab("library")
+assert(not queue:IsShown())
+r:ShowTab("now")
+assert(queue:IsShown())
+print("PASS: Signature layout regions, viewport fit, queue scrolling/reorder/removal and footer playback")
 print("PASS: mocked full player and mini-player creation, six screens, 13 skins, scales and long title")

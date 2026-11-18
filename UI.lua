@@ -482,7 +482,7 @@ local function EB() return R.Live end
 
 -- ---------- main window ----------
 local TABS = { { "now", "Now Playing" }, { "library", "Library" }, { "playlists", "Playlists" }, { "live", "Live" }, { "skins", "Skins" }, { "settings", "Settings" } }
-local W, H = 680, 480          -- design size; shown scaled (db.scale, default 0.8)
+local W, H = 1040, 620          -- design size; shown scaled (db.scale, default 0.8)
 
 function R:CreateMainWindow()
     if self.mainFrame then return end
@@ -506,10 +506,11 @@ function R:CreateMainWindow()
     f.shade:SetDrawLayer("BACKGROUND", 2)
     f.shade:SetAllPoints()
     f.headShade = f:CreateTexture(nil, "BACKGROUND", nil, 3) -- skin banner
-    f.headShade:SetPoint("TOPLEFT"); f.headShade:SetPoint("TOPRIGHT"); f.headShade:SetHeight(88)
+    f.headShade:SetPoint("TOPLEFT"); f.headShade:SetPoint("TOPRIGHT"); f.headShade:SetHeight(148)
     local header = CreateFrame("Frame", nil, f)
+    header.skinTextureParent = f
     header:SetFrameLevel(f:GetFrameLevel())
-    header:SetPoint("TOPLEFT"); header:SetPoint("TOPRIGHT"); header:SetHeight(55)
+    header:SetPoint("TOPLEFT"); header:SetPoint("TOPRIGHT"); header:SetHeight(148)
     Renderer:Bind(header, "header", f.headShade, "BACKGROUND", 3)
     local skinBackground = Renderer:Bind(f, "background", nil, "BACKGROUND", 1)
     skinBackground.enabled = function()
@@ -517,7 +518,7 @@ function R:CreateMainWindow()
         return choice ~= "kalimdor" and choice ~= "eastern" and choice ~= "none"
     end
     f.headFoot = KitTex(f, "BORDER", "shine")                -- sheen along the banner's foot
-    f.headFoot:SetPoint("TOPLEFT", 0, -82); f.headFoot:SetPoint("TOPRIGHT", 0, -82); f.headFoot:SetHeight(8)
+    f.headFoot:SetPoint("TOPLEFT", 0, -146); f.headFoot:SetPoint("TOPRIGHT", 0, -146); f.headFoot:SetHeight(8)
     f.headFoot:SetVertexColor(0, 0, 0, 0.6)
     Outline(f, C.acc, 0.25)
     f.trim = Trim(f, 30, 6)
@@ -548,25 +549,26 @@ function R:CreateMainWindow()
     f.miniBtn:SetPoint("RIGHT", f.close, "LEFT", -6, 0)
     -- Live DJ badge in the header (UpdateLive calls f.headLive:SetText)
     f.headLive = DJBadge(f, 22)
-    f.headLive:SetPoint("TOPRIGHT", -14, -60)     -- right end of the tab row, clear of the header art
+    f.headLive:SetPoint("TOPRIGHT", -310, -166)     -- right end of the tab row, clear of the header art
 
     -- tabs: forged plates, the open one lit in the skin's tab colour
     f.tabs = {}
-    local x = 18
+    f.navOrder = {}
     for _, t in ipairs(TABS) do
         local key, label = t[1], t[2]
         local b = CreateFrame("Button", nil, f)
+        b.tabFill = Fill(b, C.raised)
         b.face = KitTex(b, "BACKGROUND", "tab")
         b.face:SetAllPoints()
         b.skinSurface = BindSurface(b, "tab", b.face, "BACKGROUND", 1)
-        b.label = Text(b, 13, C.dim, BODY_FONT, "CENTER")
+        b.label = Text(b, 18, C.dim, TITLE_FONT, "CENTER")
         b.label:SetText(label)
         b.label:SetPoint("CENTER", 0, -1)
         b.label:SetShadowColor(0, 0, 0, 1)
         b.label:SetShadowOffset(1, -1)
-        b:SetSize(b.label:GetStringWidth() + 24, 28)
-        b:SetPoint("TOPLEFT", x, -57)
-        x = x + b:GetWidth() + 3
+        b:SetSize(170, 43)
+        b:SetPoint("TOPLEFT", 20, -170 - (#f.navOrder * 51))
+        f.navOrder[#f.navOrder+1] = b
         b.bar = Tex(b, "ARTWORK", C.acc)
         b.bar:SetPoint("BOTTOMLEFT", 8, 2); b.bar:SetPoint("BOTTOMRIGHT", -8, 2); b.bar:SetHeight(2)
         if key == "live" then
@@ -588,13 +590,13 @@ function R:CreateMainWindow()
         f.tabs[key] = b
     end
     local sep = Tex(f, "BORDER", C.line)
-    sep:SetPoint("TOPLEFT", 0, -88); sep:SetPoint("TOPRIGHT", 0, -88); sep:SetHeight(1)
+    sep:SetPoint("TOPLEFT", 0, -148); sep:SetPoint("TOPRIGHT", 0, -148); sep:SetHeight(1)
 
     f.pages = {}
     for _, t in ipairs(TABS) do
         local p = CreateFrame("Frame", nil, f)
-        p:SetPoint("TOPLEFT", 18, -102)
-        p:SetPoint("BOTTOMRIGHT", -18, 16)
+        p:SetPoint("TOPLEFT", 216, -168)
+        p:SetPoint("BOTTOMRIGHT", -24, 92)
         p:Hide()
         f.pages[t[1]] = p
     end
@@ -604,6 +606,7 @@ function R:CreateMainWindow()
     self:BuildLivePage(f.pages.live)
     self:BuildSkinsPage(f.pages.skins)
     self:BuildSettingsPage(f.pages.settings)
+    self:BuildSignatureChrome(f)
     -- a preview never outlives the window
     f:SetScript("OnHide", function() if R.previewSkin then R.previewSkin = nil; R:ApplySkin() end end)
 
@@ -615,7 +618,9 @@ function R:CreateMainWindow()
         R:UpdateProgress()
     end)
     self:AddScaleGrip(f, "scale")
-    f:SetScale(self.db.scale or 0.8)
+    local screenW, screenH = UIParent:GetWidth(), UIParent:GetHeight()
+    local fit = math.min(1.4, screenW / (W + 24), screenH / (H + 24))
+    f:SetScale(math.min(self.db.scale or 0.8, fit))
     self:ApplySkin(true)
     f:Hide()
     self:ShowTab(self.db.tab or "now", true)
@@ -624,6 +629,10 @@ end
 -- scale around the top-left corner so the window stays put while it grows or shrinks
 function R:SetFrameScale(frame, key, scale)
     scale = math.max(0.5, math.min(1.4, scale))
+    local screenW,screenH=UIParent:GetWidth(),UIParent:GetHeight()
+    if frame==self.mainFrame then
+        scale=math.min(scale,screenW/(W+24),screenH/(H+24))
+    end
     local old = frame:GetScale()
     local left, top = frame:GetLeft(), frame:GetTop()
     frame:SetScale(scale)
@@ -707,6 +716,7 @@ function R:PaintTab(b)
     local skin = self:GetActiveSkin()
     local on = self.db and self.db.tab == b.key
     local c = on and skin.tab or skin.tabOff
+    if b.tabFill then b.tabFill:SetVertexColor(c[1],c[2],c[3],1) end
     local lift = (b.hover and not on) and 0.06 or 0
     b.face:SetVertexColor(math.min(1, c[1] + lift), math.min(1, c[2] + lift), math.min(1, c[3] + lift), 1)
     b.selected = on
@@ -728,6 +738,15 @@ function R:ShowTab(key, quiet)
     local f = self.mainFrame
     if not f.pages[key] then key = "now" end
     self.db.tab = key
+    if f.queuePanel then
+        if key == "now" then
+            f.queuePanel:Show(); f.section:Show()
+        else
+            f.queuePanel:Hide(); f.section:Hide()
+        end
+        f.headLive:SetAlpha(key == "now" and 1 or 0)
+        f.sectionTitle:SetText(key == "now" and "Now Playing" or "")
+    end
     for k, p in pairs(f.pages) do if k == key then p:Show() else p:Hide() end end
     self:PaintTabs()
     if not quiet then f:Show() end
@@ -759,11 +778,11 @@ end
 function R:StatusLine()
     local eb = EB()
     if eb and eb.live then return "ON AIR", C.live end
-    if eb and eb.tuned then return "TUNED IN  Â·  " .. string.upper(eb.Short(eb.tuned)), C.acc2 end
+    if eb and eb.tuned then return "TUNED IN  ·  " .. string.upper(eb.Short(eb.tuned)), C.acc2 end
     if self.db.isPlaying then
         if self.db.playFromPlaylist then
             local p = self:GetSelectedPlaylist()
-            return "PLAYLIST  Â·  " .. string.upper(p and p.name or ""), C.faint
+            return "PLAYLIST  ·  " .. string.upper(p and p.name or ""), C.faint
         elseif self.db.playFromFavorites then return "LIKED SONGS", C.faint end
         return "NOW PLAYING", C.faint
     end
@@ -906,7 +925,7 @@ function R:UpdateNowPage()
     elseif eb and eb:JoiningIn() then sub = string.format("Scheduled start in %ds", math.ceil(eb:JoiningIn()))
     else
         sub = song and (song.artist or (song.id and string.match(song.id, "^noyze") and "Noyze Komplaynt") or "Guild library") or "Add songs in SongList.lua"
-        if song then sub = sub .. "  Â·  " .. index .. " of " .. self:GetSongCount() end
+        if song then sub = sub .. "  ·  " .. index .. " of " .. self:GetSongCount() end
     end
     p.sub:SetText(sub)
     p.play.icon:SetIcon(self.db.isPlaying and "stop" or "play")
@@ -925,7 +944,7 @@ function R:UpdateNowPage()
         local d = eb.tuned and eb.djs[eb.tuned] or dj
         local name = d and d.name or eb.Short(eb.tuned)
         local count = d and d.count or 0
-        p.banner.text:SetText(eb.tuned and ("In " .. (d and d.room or (name .. "'s Room")) .. "  Â·  " .. count .. " tuned in") or ((d and d.room or (name .. "'s Room")) .. " is open  Â·  " .. count .. " tuned in"))
+        p.banner.text:SetText(eb.tuned and ("In " .. (d and d.room or (name .. "'s Room")) .. "  ·  " .. count .. " tuned in") or ((d and d.room or (name .. "'s Room")) .. " is open  ·  " .. count .. " tuned in"))
         p.banner.btn:SetLabel(eb.tuned and "Tune out" or "Tune in")
         p.banner.btn:SetStyle(eb.tuned and "ghost" or "primary")
         p.banner:Show()
@@ -958,6 +977,7 @@ function R:UpdateProgress()
         local eb = EB()
         if eb and eb:JoiningIn() then p.sub:SetText(string.format("Scheduled start in %ds", math.ceil(eb:JoiningIn()))) end
     end
+    self:UpdateSignatureChrome()
     if self.miniFrame and self.miniFrame:IsShown() then
         local m = self.miniFrame
         m.barFill:SetWidth(math.max(0.01, d > 0 and m:GetWidth() * e / d or 0))
@@ -1254,7 +1274,7 @@ function R:UpdatePlaylistWindow()
     local p = self.mainFrame.pages.playlists
     local pl = self:GetSelectedPlaylist()
     p.head:SetText(pl and pl.name or "Playlists")
-    p.headSub:SetText(pl and ((#(pl.songs or {})) .. " songs" .. (pl.runtime and "  Â·  song pack" or "")) or "Make one with the box on the left")
+    p.headSub:SetText(pl and ((#(pl.songs or {})) .. " songs" .. (pl.runtime and "  ·  song pack" or "")) or "Make one with the box on the left")
     local fixed = not pl or pl.runtime
     p.del:SetDisabledLook(fixed)
     p.clear:SetDisabledLook(fixed)
@@ -1338,7 +1358,7 @@ function R:BuildLivePage(p)
         if eb and (eb.live or eb.tuned) then card.icon:SetAlpha(0.65 + 0.35 * math.sin(pulse * 4)) else card.icon:SetAlpha(1) end
     end)
 
-    local colW = (W - 36 - 14) / 2
+    local colW = (W - 240 - 14) / 2
     -- request line (left)
     p.qHead = Eyebrow(p, "Request line")
     p.qHead:SetPoint("TOPLEFT", 0, -88)
@@ -1384,7 +1404,7 @@ function R:BuildLivePage(p)
         row.who:SetText(item.owner or "")
         local late = age >= eb.OVERDUE
         local wait = age < 60 and "now" or (math.floor(age / 60) .. "m")
-        row.meta:SetText((late and "|cffffb030" or "") .. item.votes .. (item.votes == 1 and " vote" or " votes") .. "  Â·  " .. wait .. (late and "|r" or ""))
+        row.meta:SetText((late and "|cffffb030" or "") .. item.votes .. (item.votes == 1 and " vote" or " votes") .. "  ·  " .. wait .. (late and "|r" or ""))
     end, function()
         local eb = EB()
         if eb.live then eb:SortQueue(); return eb.queue end
@@ -1400,7 +1420,7 @@ function R:BuildLivePage(p)
     end
     p.qFoot = Text(p, 10, C.faint)
     p.qFoot:SetPoint("BOTTOMLEFT", 0, 4)
-    p.qFoot:SetText("5 requests each  Â·  3+ min waiting goes first, then votes")
+    p.qFoot:SetText("5 requests each  ·  3+ min waiting goes first, then votes")
 
     -- right column: room chat or requests
     p.rHead = Eyebrow(p, "")
@@ -1509,7 +1529,7 @@ function R:UpdateLive()
     if f then
         local someone = eb.live or eb.tuned or dj
         if someone then f.tabs.live.dot:Show() else f.tabs.live.dot:Hide() end
-        f.headLive:SetText(eb.live and ("ON AIR  Â·  " .. (eb.listenerCount or 0) .. " listening") or (eb.tuned and "TUNED IN" or (dj and (string.upper(dj.name) .. " IS LIVE") or "")))
+        f.headLive:SetText(eb.live and ("ON AIR  ·  " .. (eb.listenerCount or 0) .. " listening") or (eb.tuned and "TUNED IN" or (dj and (string.upper(dj.name) .. " IS LIVE") or "")))
     end
     if self.UpdateMiniWindow then self:UpdateMiniWindow() end
     if self.UpdateNowPage then self:UpdateNowPage() end
@@ -1521,11 +1541,11 @@ function R:UpdateLive()
         card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
         card.title:SetText(eb:RoomName())
         local status = eb:IsAnnouncing() and "Announcing track" or "On air"
-        card.sub:SetText(status .. (song and ("  Â·  " .. song.title) or "") .. "  Â·  " .. (eb.listenerCount or 0) .. " tuned in  Â·  requests " .. (self.db.eb.open and "open" or "closed") .. (song and "" or "  Â·  play a song to start"))
+        card.sub:SetText(status .. (song and ("  ·  " .. song.title) or "") .. "  ·  " .. (eb.listenerCount or 0) .. " tuned in  ·  requests " .. (self.db.eb.open and "open" or "closed") .. (song and "" or "  ·  play a song to start"))
     elseif eb.tuned then
         local d = eb.djs[eb.tuned]
         card.icon:SetVertexColor(C.acc2[1], C.acc2[2], C.acc2[3])
-        card.title:SetText((d and d.room or (eb.Short(eb.tuned) .. "'s Room")) .. (d and d.key ~= "" and ("  Â·  " .. eb:TitleOf(d.key)) or ""))
+        card.title:SetText((d and d.room or (eb.Short(eb.tuned) .. "'s Room")) .. (d and d.key ~= "" and ("  ·  " .. eb:TitleOf(d.key)) or ""))
         local j = eb:JoiningIn()
         card.sub:SetText(eb.missing and "|cffffb030You don't have this song. Get the latest GuildRadioFM from the DJ.|r"
             or (j and string.format("Scheduled start in %ds", math.ceil(j)))
@@ -1534,8 +1554,8 @@ function R:UpdateLive()
         dj = eb:FocusDJ() or dj
         card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
         local n = #eb:LiveSets()
-        card.title:SetText(n > 1 and (n .. " rooms open, pick one") or ((dj.room or dj.name) .. (dj.key ~= "" and ("  Â·  " .. eb:TitleOf(dj.key)) or "")))
-        card.sub:SetText("Hosted by " .. dj.name .. "  Â·  " .. (dj.count or 0) .. " tuned in. Tune in to hear it in sync.")
+        card.title:SetText(n > 1 and (n .. " rooms open, pick one") or ((dj.room or dj.name) .. (dj.key ~= "" and ("  ·  " .. eb:TitleOf(dj.key)) or "")))
+        card.sub:SetText("Hosted by " .. dj.name .. "  ·  " .. (dj.count or 0) .. " tuned in. Tune in to hear it in sync.")
     else
         card.icon:SetVertexColor(C.faint[1], C.faint[2], C.faint[3])
         card.title:SetText("No rooms open")
@@ -1548,7 +1568,7 @@ function R:UpdateLive()
         local d = sets[i]
         if d and not eb.live and #sets > 1 then
             pill.full = d.full
-            pill:SetLabel((d.room or d.name) .. "  Â·  " .. (d.count or 0))
+            pill:SetLabel((d.room or d.name) .. "  ·  " .. (d.count or 0))
             pill:SetWidth(pill.label:GetStringWidth() + 22)
             pill:SetOn(eb.tuned == d.full)
             pill:ClearAllPoints()
@@ -1705,13 +1725,13 @@ function R:FillInviteMenu()
                 r.everyone = true
                 r.label:SetText("Whole guild")
                 SetColor(r.label, C.acc)
-                r.meta:SetText(#mates .. " online  Â·  posts in guild chat")
+                r.meta:SetText(#mates .. " online  ·  posts in guild chat")
             else
                 r.full = it.full
                 local invited = eb.invited[it.name] and (eb.Now() - eb.invited[it.name] < 120)
                 r.label:SetText(it.name)
                 SetColor(r.label, invited and C.faint or C.text)
-                r.meta:SetText(invited and "invited" or (it.level .. "  Â·  " .. it.zone .. (it.hasRadio and "  Â·  has radio" or "")))
+                r.meta:SetText(invited and "invited" or (it.level .. "  ·  " .. it.zone .. (it.hasRadio and "  ·  has radio" or "")))
             end
             r:Show()
         else
@@ -1735,12 +1755,12 @@ function R:BuildSkinsPage(p)
     p.head:SetPoint("TOPLEFT", 0, -4)
     p.note = Text(p, 11, C.faint, BODY_FONT, "RIGHT")
     p.note:SetPoint("TOPRIGHT", 0, -4)
-    p.note:SetText("Hover to preview  Â·  click to keep  Â·  saved for this account")
+    p.note:SetText("Hover to preview  ·  click to keep  ·  saved for this account")
     p.current = Text(p, 12, C.text, BODY_FONT)
     p.current:SetPoint("LEFT", p.head, "RIGHT", 10, 0)
     p.cards = {}
     local cols, gap, ch = 4, 8, 72
-    local cw = math.floor((W - 36 - gap * (cols - 1)) / cols)
+    local cw = math.floor((W - 240 - gap * (cols - 1)) / cols)
     for i, s in ipairs(self.SkinList) do
         local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
         local b = CreateFrame("Button", nil, p)
@@ -1785,7 +1805,7 @@ function R:UpdateSkinsWindow()
     local p = self.mainFrame.pages.skins
     local saved = self.SkinByKey[self.db.skin] or self.SkinByKey[self.SKIN_DEFAULT]
     p.current:SetText(self.previewSkin and self.SkinByKey[self.previewSkin] and
-        ("Previewing " .. self.SkinByKey[self.previewSkin].name .. "  Â·  yours: " .. saved.name) or saved.name)
+        ("Previewing " .. self.SkinByKey[self.previewSkin].name .. "  ·  yours: " .. saved.name) or saved.name)
     for _, b in ipairs(p.cards) do
         local chosen = b.key == saved.key
         local looking = b.key == self.previewSkin
@@ -1865,14 +1885,13 @@ function R:ApplySkinArt()
         f.logo:SetFont(s.font or LOGO_FONT, 26, "")
         local now = f.pages.now
         local hasEmblem = Renderer:PaintEmblem(now.art.emblem)
-        if hasEmblem then now.art:Show() else now.art:Hide() end
-        f.logo:ClearAllPoints()
-        f.logo:SetPoint("TOPLEFT", f, "TOPLEFT", f.emblemBinding.available and 62 or 14, -12)
-        local x = hasEmblem and 196 or 20
-        for _, entry in ipairs({{now.eyebrow,-14},{now.title,-32},{now.lyric,-81},{now.bar,-102}}) do
-            entry[1]:ClearAllPoints()
-            entry[1]:SetPoint("TOPLEFT", x, entry[2])
-            if entry[1] ~= now.eyebrow then entry[1]:SetPoint("RIGHT", now, "RIGHT", 0, 0) end
+        self:LayoutSignatureNow()
+        if s.key == "trogdor" then
+            f.logo:Hide(); f.logoFM:Hide(); f.emblem:Hide()
+        else
+            f.logo:Show(); f.logoFM:Show()
+            f.logo:ClearAllPoints()
+            f.logo:SetPoint("TOPLEFT", f, "TOPLEFT", 240, -42)
         end
         SetTex(now.decor, art.decor)
         self:ApplyBackdrop()
@@ -1936,7 +1955,7 @@ function R:BuildSettingsPage(p)
         { "Live invites from the guild", function() return R.db.invites ~= false end, function(on) R.db.invites = on; R:RefreshAll() end },
     }
     p.switches = {}
-    local colW = (W - 36 - 24) / 2
+    local colW = (W - 240 - 24) / 2
     for i, r in ipairs(rows) do
         local col = (i - 1) % 2
         local line = math.floor((i - 1) / 2)
@@ -1994,7 +2013,7 @@ function R:BuildSettingsPage(p)
 
     p.credits = Text(p, 11, C.faint)
     p.credits:SetPoint("BOTTOMLEFT", 0, 0)
-    p.credits:SetText("GuildRadioFM by Nez  Â·  live sets by Noyze Komplaynt  Â·  v" .. tostring(R.version))
+    p.credits:SetText("GuildRadioFM by Nez  ·  live sets by Noyze Komplaynt  ·  v" .. tostring(R.version))
 end
 
 function R:UpdateSettingsWindow()
@@ -2015,6 +2034,7 @@ function R:UpdateMainWindow()
     end
     self:UpdateLive()
     self:UpdateSkinsWindow()
+    self:UpdateSignatureChrome()
 end
 
 -- ---------- mini player ----------
@@ -2022,7 +2042,7 @@ function R:CreateMiniWindow()
     if self.miniFrame then return end
     local m = CreateFrame("Frame", "GuildRadioFMMiniFrame", UIParent)
     self.miniFrame = m
-    m:SetSize(300, 52)
+    m:SetSize(520, 64)
     m:SetFrameStrata("MEDIUM")
     m:SetClampedToScreen(true)
     m:SetMovable(true)
@@ -2318,4 +2338,175 @@ end
 
 function R:OpenOptionsPanel()
     self:ShowTab("settings")
+end
+
+-- Signature layout uses the existing player entry points and SavedVariables.
+function R:LayoutSignatureNow()
+    local f = self.mainFrame
+    if not f then return end
+    local p = f.pages.now
+    p:ClearAllPoints()
+    p:SetPoint("TOPLEFT", f, "TOPLEFT", 216, -220)
+    p:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -308, 96)
+    p.art:SetSize(154,154)
+    p.art:ClearAllPoints()
+    p.art:SetPoint("TOPLEFT", 0, -4)
+    p.art:Show()
+    p.title:ClearAllPoints()
+    p.title:SetPoint("TOPLEFT", 172, -26)
+    p.title:SetPoint("RIGHT", p, "RIGHT", -4, 0)
+    p.title:SetFont(TITLE_FONT,25,"")
+    p.sub:ClearAllPoints()
+    p.sub:SetPoint("TOPLEFT",p.title,"BOTTOMLEFT",0,-10)
+    p.sub:SetPoint("RIGHT",p,"RIGHT",-4,0)
+    p.eyebrow:ClearAllPoints()
+    p.eyebrow:SetPoint("TOPLEFT",172,-4)
+    p.lyric:ClearAllPoints()
+    p.lyric:SetPoint("TOPLEFT",172,-118)
+    p.lyric:SetPoint("RIGHT",p,"RIGHT",-4,0)
+    p.bar:ClearAllPoints()
+    p.bar:SetPoint("TOPLEFT",10,-178)
+    p.bar:SetPoint("RIGHT",p,"RIGHT",-10,0)
+    p.bar:SetHeight(14)
+    p.elapsed:ClearAllPoints()
+    p.elapsed:SetPoint("TOPLEFT",p.bar,"BOTTOMLEFT",0,-5)
+    p.total:ClearAllPoints()
+    p.total:SetPoint("TOPRIGHT",p.bar,"BOTTOMRIGHT",0,-5)
+    p.play:SetSize(64,64)
+    p.play.icon:SetSize(28,28)
+    for _,button in ipairs({p.prev,p.next,p.shuffle,p["repeat"]}) do button:SetSize(54,48) end
+    p.like:ClearAllPoints()
+    p.like:SetPoint("BOTTOMLEFT",p,"BOTTOMLEFT",8,0)
+    p.vol:ClearAllPoints()
+    p.vol:SetPoint("TOPRIGHT",f,"TOPRIGHT",-255,-168)
+    p.volume:ClearAllPoints()
+    p.volume:SetPoint("LEFT",p.vol,"RIGHT",4,0)
+    p.volume:SetSize(150,20)
+    p.volText:ClearAllPoints()
+    p.volText:SetPoint("LEFT",p.volume,"RIGHT",6,0)
+    p.localQueue:Hide()
+    p.playQueue:Hide()
+    p.banner:SetAlpha(0)
+    p.banner:EnableMouse(false)
+    p.banner.btn:Hide()
+end
+
+function R:BuildSignatureChrome(f)
+    local section=CreateFrame("Frame",nil,f)
+    f.section=section
+    section:SetPoint("TOPLEFT",216,-162)
+    section:SetSize(350,48)
+    Fill(section,C.raised)
+    Renderer:Bind(section,"tab",nil,"ARTWORK")
+    f.sectionTitle=Text(section,27,C.acc,TITLE_FONT)
+    f.sectionTitle:SetPoint("LEFT",20,0)
+    f.sectionTitle:SetText("Now Playing")
+
+    local queue=CreateFrame("Frame",nil,f)
+    f.queuePanel=queue
+    queue:SetPoint("TOPRIGHT",-22,-218)
+    queue:SetSize(266,306)
+    Fill(queue,C.surface)
+    Renderer:Bind(queue,"panel",nil,"ARTWORK")
+    queue.title=Text(queue,17,C.acc,TITLE_FONT)
+    queue.title:SetPoint("TOPLEFT",16,-16)
+    queue.title:SetText("Queue")
+    local function move(direction)
+        local current=queue.selection or 1
+        if R:MoveQueueEntry(current,current+direction) then queue.selection=current+direction end
+        R:UpdateSignatureChrome()
+    end
+    queue.up=IconButton(queue,"up",15,function() move(-1) end,"Move selected entry up",28)
+    queue.up:SetPoint("TOPRIGHT",-44,-11)
+    queue.down=IconButton(queue,"down",15,function() move(1) end,"Move selected entry down",28)
+    queue.down:SetPoint("LEFT",queue.up,"RIGHT",3,0)
+    queue.offset=0
+    Wheel(queue,function(delta)
+        queue.offset=math.max(0,math.min(math.max(0,#R:GetQueue()-7),queue.offset-delta))
+        R:UpdateSignatureChrome()
+    end)
+    queue.rows={}
+    for i=1,7 do
+        local row=CreateFrame("Button",nil,queue)
+        row:SetSize(232,29)
+        row:SetPoint("TOPLEFT",16,-52-(i-1)*30)
+        row.bg=Fill(row,C.raised,0.2)
+        row.title=Text(row,12,C.text)
+        row.title:SetPoint("LEFT",6,0)
+        row.title:SetPoint("RIGHT",row,"RIGHT",-25,0)
+        row.remove=IconButton(row,"close",10,function() R:RemoveFromQueue(row.index) end,"Remove this local queue entry",20)
+        row.remove:SetPoint("RIGHT",-2,0)
+        row:SetScript("OnClick",function() queue.selection=row.index; R:UpdateSignatureChrome() end)
+        Wheel(row,function(delta)
+            queue.offset=math.max(0,math.min(math.max(0,#R:GetQueue()-7),queue.offset-delta))
+            R:UpdateSignatureChrome()
+        end)
+        Tip(row,function() local item=R:GetQueue()[row.index]; return item and item.title end)
+        queue.rows[i]=row
+    end
+    queue.play=TextButton(queue,"Play queue",110,27,function() R:PlayNextInQueue() end,"primary")
+    queue.play:SetPoint("BOTTOMLEFT",16,12)
+    queue.more=Text(queue,11,C.dim,BODY_FONT,"RIGHT")
+    queue.more:SetPoint("BOTTOMRIGHT",-16,20)
+
+    local footer=CreateFrame("Frame",nil,f)
+    f.footer=footer
+    footer:SetPoint("BOTTOMLEFT",18,18)
+    footer:SetPoint("BOTTOMRIGHT",-18,18)
+    footer:SetHeight(60)
+    Fill(footer,C.surface)
+    Renderer:Bind(footer,"panel",nil,"ARTWORK")
+    footer.icon=footer:CreateTexture(nil,"ARTWORK")
+    footer.emblem=Renderer:BindEmblem(footer,footer.icon,"mini")
+    footer.title=Text(footer,17,C.text,TITLE_FONT)
+    footer.title:SetPoint("TOPLEFT",60,-11)
+    footer.title:SetWidth(250)
+    footer.status=Text(footer,11,C.dim)
+    footer.status:SetPoint("TOPLEFT",60,-33)
+    footer.previous=IconButton(footer,"prev",20,function() R:Back() end,"Previous",46)
+    footer.previous:SetPoint("RIGHT",-132,0)
+    footer.play=IconButton(footer,"play",23,function() if R.db.isPlaying then R:Stop() else R:Play() end end,"Play or stop",46)
+    footer.play:SetPoint("LEFT",footer.previous,"RIGHT",5,0)
+    footer.next=IconButton(footer,"next",20,function() R:Next() end,"Next",46)
+    footer.next:SetPoint("LEFT",footer.play,"RIGHT",5,0)
+    footer.progress=CreateFrame("Frame",nil,footer)
+    footer.progress:SetPoint("LEFT",330,0)
+    footer.progress:SetPoint("RIGHT",footer.previous,"LEFT",-24,0)
+    footer.progress:SetHeight(10)
+    Fill(footer.progress,C.raised)
+    footer.fill=Tex(footer.progress,"ARTWORK",C.acc)
+    footer.fill:SetPoint("TOPLEFT");footer.fill:SetPoint("BOTTOMLEFT")
+    Renderer:Bind(footer.progress,"progressTrack",nil,"OVERLAY")
+    footer.elapsed=Text(footer,10,C.dim)
+    footer.elapsed:SetPoint("BOTTOMLEFT",footer.progress,"TOPLEFT",0,4)
+    footer.duration=Text(footer,10,C.dim,BODY_FONT,"RIGHT")
+    footer.duration:SetPoint("BOTTOMRIGHT",footer.progress,"TOPRIGHT",0,4)
+end
+
+function R:UpdateSignatureChrome()
+    local f=self.mainFrame
+    if not f or not f.footer then return end
+    local footer=f.footer
+    footer.title:SetText(self:GetCurrentTitle())
+    footer.status:SetText(self.db.isPlaying and "Playing" or "Stopped")
+    footer.play.icon:SetIcon(self.db.isPlaying and "stop" or "play")
+    local elapsed,duration=self:SongPosition()
+    footer.fill:SetWidth(math.max(0.01,duration>0 and footer.progress:GetWidth()*elapsed/duration or 0))
+    footer.elapsed:SetText(Fmt(elapsed))
+    footer.duration:SetText(duration>0 and Fmt(duration) or "")
+    local queue=f.queuePanel
+    local entries=self:GetQueue()
+    queue.title:SetText("Queue ("..#entries..")")
+    queue.offset=math.max(0,math.min(queue.offset,math.max(0,#entries-7)))
+    for i,row in ipairs(queue.rows) do
+        local index=queue.offset+i
+        row.index=index
+        local item=entries[index]
+        if item then
+            row.title:SetText(item.title or item.songID or "Unavailable track")
+            row.bg:SetAlpha(queue.selection==index and 0.85 or 0.2)
+            row:Show()
+        else row:Hide() end
+    end
+    queue.more:SetText(#entries>7 and ((queue.offset+1).."-"..math.min(queue.offset+7,#entries)) or "")
 end
