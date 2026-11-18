@@ -62,7 +62,7 @@ local function KitTex(parent, layer, region, sublevel)
 end
 
 -- forged corners and edges around a frame, tinted with the skin's metal
-local function Trim(frame, corner, thick, layer)
+local function Trim(frame, corner, thick, layer, role)
     local l, r, t, b = R.KitCoords("corner")
     local trim = {}
     local spots = {
@@ -97,7 +97,7 @@ local function Trim(frame, corner, thick, layer)
     local fallback = {}
     function fallback:Show() for _, texture in ipairs(trim) do texture:Show() end end
     function fallback:Hide() for _, texture in ipairs(trim) do texture:Hide() end end
-    Renderer:Bind(frame, "outer", fallback, layer or "ARTWORK", 3)
+    Renderer:Bind(frame, role or "outer", fallback, layer or "ARTWORK", 3)
     return trim
 end
 
@@ -499,7 +499,12 @@ function R:CreateMainWindow()
     local w = self.db.window or {}
     f:SetPoint(w.point or "CENTER", UIParent, w.relativePoint or "CENTER", w.x or 0, w.y or 0)
     Fill(f, C.bg)
-    f.tiles = TileGrid(f, W, H, 120, "BACKGROUND", 1)      -- skin background
+    local material = CreateFrame("Frame", nil, f)
+    material:SetPoint("TOPLEFT",0,-148)
+    material:SetPoint("BOTTOMRIGHT",0,78)
+    material:SetFrameLevel(f:GetFrameLevel())
+    f.material = material
+    f.tiles = TileGrid(material, W, H-226, 120, "BACKGROUND", 1)
     f.art = f:CreateTexture(nil, "BACKGROUND", nil, 1)      -- optional loading-screen art
     f.art:SetAllPoints()
     f.shade = Tex(f, "BACKGROUND", C.shade)
@@ -561,7 +566,7 @@ function R:CreateMainWindow()
         b.face = KitTex(b, "BACKGROUND", "tab")
         b.face:SetAllPoints()
         b.skinSurface = BindSurface(b, "tab", b.face, "BACKGROUND", 1)
-        b.label = Text(b, 18, C.dim, TITLE_FONT, "CENTER")
+        b.label = Text(b, 18, C.dim, BODY_FONT, "CENTER")
         b.label:SetText(label)
         b.label:SetPoint("CENTER", 0, -1)
         b.label:SetShadowColor(0, 0, 0, 1)
@@ -689,8 +694,10 @@ function R:ApplyBackdrop()
     local path, known
     for _, b in ipairs(BACKDROPS) do if b.key == choice then path, known = b.path, true end end
     if not known then choice = "forge" end
+    local assets = Renderer.assets[skin.key]
+    local customBackground = assets and assets.surfaces and assets.surfaces.background
     for _, t in ipairs(f.tiles) do
-        if choice == "forge" and skin.art.tile then
+        if choice == "forge" and skin.art.tile and not customBackground then
             t:SetTexture(skin.art.tile)
             t:SetVertexColor(1, 1, 1, skin.tileAlpha or 0.6)
             t:Show()
@@ -980,7 +987,7 @@ function R:UpdateProgress()
     self:UpdateSignatureChrome()
     if self.miniFrame and self.miniFrame:IsShown() then
         local m = self.miniFrame
-        m.barFill:SetWidth(math.max(0.01, d > 0 and m:GetWidth() * e / d or 0))
+        m.barFill:SetWidth(math.max(0.01, d > 0 and (m:GetWidth()-24) * e / d or 0))
     end
 end
 
@@ -1759,7 +1766,7 @@ function R:BuildSkinsPage(p)
     p.current = Text(p, 12, C.text, BODY_FONT)
     p.current:SetPoint("LEFT", p.head, "RIGHT", 10, 0)
     p.cards = {}
-    local cols, gap, ch = 4, 8, 72
+    local cols, gap, ch = 4, 8, 78
     local cw = math.floor((W - 240 - gap * (cols - 1)) / cols)
     for i, s in ipairs(self.SkinList) do
         local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
@@ -1776,11 +1783,15 @@ function R:BuildSkinsPage(p)
         b.thumb:SetTexCoord(0, 1, 0, 1)   -- the art band above the tab ledge
         b.crest = b:CreateTexture(nil, "OVERLAY")
         b.emblemBinding = Renderer:BindEmblem(b, b.crest, "picker", s.key)
-        b.name = Text(b, 12, C.text, TITLE_FONT)
+        local labelBackground = Tex(b,"ARTWORK",{0.025,0.025,0.03,0.96})
+        labelBackground:SetPoint("BOTTOMLEFT",1,1)
+        labelBackground:SetPoint("BOTTOMRIGHT",-1,1)
+        labelBackground:SetHeight(26)
+        b.name = Text(b, 16, C.text, TITLE_FONT)
         b.name:SetPoint("BOTTOMLEFT", 8, 8)
         b.name:SetPoint("RIGHT", b, "RIGHT", -8, 0)
         b.name:SetText(s.name)
-        b.tag = Text(b, 10, C.acc, BODY_FONT, "RIGHT")
+        b.tag = Text(b, 13, C.acc, BODY_FONT, "RIGHT")
         b.tag:SetPoint("TOPLEFT", 7, -7)
         b.edge = Outline(b, C.line)
         b.key = s.key
@@ -1899,15 +1910,16 @@ function R:ApplySkinArt()
     end
     local m = self.miniFrame
     if m then
-        SetTex(m.banner, art.banner)
-        if art.banner then m.banner:SetTexCoord(0.42, 1, 0, 0.64) end
+        m.banner:SetTexture(WHITE)
+        m.banner:SetTexCoord(0,1,0,1)
+        m.banner:SetVertexColor(0.035,0.025,0.02,1)
         local hasEmblem = Renderer:PaintEmblem(m.emblemBinding)
-        local x = hasEmblem and 50 or 12
+        local x = hasEmblem and 60 or 16
         m.eyebrow:ClearAllPoints()
-        m.eyebrow:SetPoint("TOPLEFT", x, -10)
+        m.eyebrow:SetPoint("TOPLEFT", x, -42)
         m.eyebrow:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
         m.title:ClearAllPoints()
-        m.title:SetPoint("TOPLEFT", x, -23)
+        m.title:SetPoint("TOPLEFT", x, -16)
         m.title:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
     end
     for _, card in ipairs(SKINNED.cards or {}) do Renderer:PaintEmblem(card.emblemBinding) end
@@ -2042,7 +2054,7 @@ function R:CreateMiniWindow()
     if self.miniFrame then return end
     local m = CreateFrame("Frame", "GuildRadioFMMiniFrame", UIParent)
     self.miniFrame = m
-    m:SetSize(520, 64)
+    m:SetSize(520, 76)
     m:SetFrameStrata("MEDIUM")
     m:SetClampedToScreen(true)
     m:SetMovable(true)
@@ -2055,7 +2067,8 @@ function R:CreateMiniWindow()
     Fill(m, C.bg)
     m.banner = m:CreateTexture(nil, "BACKGROUND", nil, 1)   -- skin banner scene, dimmed under the text
     m.banner:SetAllPoints()
-    Renderer:Bind(m, "mini", m.banner, "BACKGROUND", 1)
+    m.banner:SetTexture(WHITE)
+    m.banner:SetVertexColor(0.035,0.025,0.02,1)
     m.dim = m:CreateTexture(nil, "BACKGROUND", nil, 2)
     m.dim:SetTexture(WHITE)
     m.dim:SetAllPoints()
@@ -2069,7 +2082,7 @@ function R:CreateMiniWindow()
         m.dim:SetVertexColor(0, 0, 0, 0.6)
     end
     Outline(m, C.line)
-    m.trim = Trim(m, 16, 3)
+    m.trim = Trim(m, 12, 2, nil, "miniBorder")
     m.icon = m:CreateTexture(nil, "ARTWORK", nil, 3)
     m.emblemBinding = Renderer:BindEmblem(m, m.icon, "mini")
     m.play = IconButton(m, "play", 14, function() if R.db.isPlaying then R:Stop() else R:Play() end end, nil, 26)
@@ -2080,18 +2093,29 @@ function R:CreateMiniWindow()
     m.close:SetAlpha(0)
     m.open = IconButton(m, "up", 10, function() R:ShowTab(R.db.tab or "now") end, "Open the full player", 20)
     m.open:SetPoint("TOPRIGHT", m.close, "TOPLEFT", 0, 0)
-    m.next:SetPoint("RIGHT", -44, -1)
-    m.play:SetPoint("RIGHT", m.next, "LEFT", -2, 0)
-    m.prev:SetPoint("RIGHT", m.play, "LEFT", -2, 0)
-    m.eyebrow = Text(m, 9, C.faint)
+    m.play:SetSize(36,36)
+    m.play.icon:SetSize(22,22)
+    m.prev:SetSize(34,34)
+    m.prev.icon:SetSize(19,19)
+    m.next:SetSize(34,34)
+    m.next.icon:SetSize(19,19)
+    for _,button in ipairs({m.play,m.prev,m.next,m.open,m.close}) do
+        button.skinSurface.role = "miniControl"
+    end
+    m.next:SetPoint("RIGHT", -48, 0)
+    m.play:SetPoint("RIGHT", m.next, "LEFT", -8, 0)
+    m.prev:SetPoint("RIGHT", m.play, "LEFT", -8, 0)
+    m.eyebrow = Text(m, 12, C.dim)
     m.eyebrow:SetPoint("TOPLEFT", 50, -10)
-    m.title = Text(m, 13, C.acc, TITLE_FONT)
+    m.title = Text(m, 18, C.text, BODY_FONT)
+    m.title:SetShadowColor(0,0,0,1)
+    m.title:SetShadowOffset(1,-1)
     m.title:SetPoint("TOPLEFT", 50, -23)
     m.title:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
     m.eyebrow:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
     m.barFill = Tex(m, "OVERLAY", C.acc)
-    m.barFill:SetPoint("BOTTOMLEFT", 0, 0)
-    m.barFill:SetHeight(2)
+    m.barFill:SetPoint("BOTTOMLEFT", 12, 8)
+    m.barFill:SetHeight(4)
     local miniProgress = CreateFrame("Frame", nil, m)
     miniProgress:SetFrameLevel(m:GetFrameLevel())
     miniProgress:SetAllPoints(m.barFill)

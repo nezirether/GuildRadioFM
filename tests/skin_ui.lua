@@ -14,6 +14,7 @@ local function widget(parent)
     function w:GetWidth() return self.width end
     function w:GetHeight() return self.height end
     function w:SetText(value) self.text=tostring(value or "") end
+    function w:SetFont(path,size) self.fontPath,self.fontSize=path,size end
     function w:GetText() return self.text end
     function w:GetStringWidth() return #self.text*6 end
     function w:GetFrameLevel() return 1 end
@@ -81,6 +82,11 @@ r:RefreshAll()
 assert(r.db.skin=="retail")
 r:SetSkin("trogdor")
 local f=r.mainFrame
+assert(r.miniFrame:GetHeight()==76 and r.miniFrame.title.fontSize==18)
+assert(r.miniFrame.eyebrow.fontSize==12 and r.miniFrame.play:GetWidth()==36)
+for _,binding in ipairs(r.SkinRenderer.surfaces) do
+    if binding.frame==r.miniFrame then assert(binding.role~="outer") end
+end
 assert(f:GetWidth()==1040 and f:GetHeight()==620 and #f.navOrder==6)
 assert(f.pages.now.points[1][4]==216 and f.pages.now.points[2][4]==-308)
 r:SetFrameScale(f,"scale",1.4)

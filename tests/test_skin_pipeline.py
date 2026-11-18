@@ -22,7 +22,11 @@ class SkinPipelineTests(unittest.TestCase):
         assets = lua.globals().GuildRadioFM.SkinRenderer.assets
         prefix = 'Interface\\AddOns\\GuildRadioFM\\'
         self.assertEqual(len(list(assets.keys())), 13)
-        for _, skin in assets.items():
+        for key, skin in assets.items():
+            if key != 'trogdor':
+                self.assertIsNone(skin.surfaces.outer)
+                self.assertIsNone(skin.surfaces.tab)
+                self.assertIsNone(skin.surfaces.transport)
             for _, surface in skin.surfaces.items():
                 local = ROOT / surface.path.removeprefix(prefix).replace('\\', '/')
                 with Image.open(local) as image:
