@@ -1,4 +1,4 @@
-GuildRadioFM 2.8.0-rc.2 (WoW Forever, Interface 16001)
+GuildRadioFM 2.8.1-rc.1 (WoW Forever, Interface 16001)
 
 GuildRadioFM plays local audio and coordinates guild rooms through addon
 messages. Install the GuildRadioFM folder in your Forever client's

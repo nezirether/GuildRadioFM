@@ -31,6 +31,7 @@ GameTooltip = {
 }
 
 GuildRadioFM = {}
+dofile("Skins.lua")
 dofile("UI.lua")
 
 local function upvalue(fn, name, seen)
@@ -78,6 +79,10 @@ check(function() return true end)
 check(function() return 12 end)
 check(function() return function() end end)
 check("")
+check(nil)
+check(false)
+check(12)
+check({})
 local disabled = makeIconButton(widget(), "close", 12, noop, function(self)
     if self.disabled then return "Unavailable" end
 end)

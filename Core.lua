@@ -1,5 +1,5 @@
 GuildRadioFM = GuildRadioFM or {}
-GuildRadioFM.version = "2.8.0-rc.2"
+GuildRadioFM.version = "2.8.1-rc.1"
 GuildRadioFM.soundChannel = "Dialog"
 
 -- Credit, in plain text (Blizzard's add-on policy: no hidden or obfuscated code).
@@ -866,6 +866,8 @@ function GuildRadioFM:HandlePlaybackTick()
 
     if now - self.startedAt >= duration then
         self.durationAdvanceStartedAt = self.startedAt
+        -- The listed duration may be shorter than the actual file.
+        self:StopLocalTrack()
         self:AdvanceAfterTrackEnd()
     end
 end

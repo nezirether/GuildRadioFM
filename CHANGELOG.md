@@ -1,5 +1,16 @@
 GuildRadioFM Changelog
 
+## 2.8.1-rc.1
+
+- Stop GuildRadioFM's active sound when leaving the world, opening a loading screen, or tearing down the UI for /reload.
+- Suspend scheduled starts and duration advancement during world transitions. Coalesce world and loading-screen completion events, and restart a solo selection at most once while keeping its playlist or favorites context.
+- Stop an active handle before duration-based advancement. An MP3 that runs longer than its library entry can no longer overlap the next track through this path.
+- Keep a live room's timeline during a loading screen. Hosts and listeners who miss the start wait for the next scheduled song.
+- Ignore server-clock samples across long frames. Surface local audio failures as unavailable tracks and clear the missing-track status when the host stops.
+- Validate request and handoff fields before accepting their sequence, and require the matching listener identity for leave messages.
+- Retain the safe RC2 tooltip callback logic and expand its regression cases with the skin module loaded.
+- Add headless coverage for asymmetric latency, local file errors, reload cleanup and overlapping-audio regressions. See the test report for Forever checks still pending.
+
 ## 2.8.0-rc.2 - mini player
 
 - Mini player: Previous button immediately left of Play/Stop (same Back action as the main window).

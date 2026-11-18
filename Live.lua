@@ -20,7 +20,7 @@ R.Live = EB
 
 local PREFIX = "GRFM_EB"
 local LEAD = 1.2          -- seconds between the DJ pressing play and everyone starting together
-local LATE_SLACK = 0.12   -- a listener this late still starts from the top (inaudible)
+local LATE_SLACK = 0.12   -- maximum tolerated delay before waiting for the next song
 local JOIN_PREP = 0.6     -- a join point needs at least this much notice
 local MAX_OPEN = 5
 local MAX_QUEUE_BYTES = 155
@@ -39,7 +39,7 @@ local function Calibrate()
     local s = GetServerTime and GetServerTime()
     local t = GetTime()
     if not s then return end
-    if lastSec and s ~= lastSec and lastFrameTime then
+    if lastSec and s == lastSec + 1 and lastFrameTime and t - lastFrameTime <= 0.25 then
         local est = s - (t + lastFrameTime) / 2     -- the tick happened between the last frame and this one
         if not clockOffset or math.abs(est - clockOffset) > 1 then clockOffset = est
         else clockOffset = clockOffset * 0.8 + est * 0.2 end
@@ -130,20 +130,27 @@ end
 -- R:Play() runs Nez's normal logic; PlayLocalTrack is caught and held until the scheduled moment.
 local schedule        -- { at = sharedTime, offset = seconds into the song, file = override }
 local pending         -- the held sound, fired from OnUpdate
+local changingWorld = false
+local audioTransition = 0
 local origPlay, origStop, origAdvance, origLocal = R.Play, R.Stop, R.AdvanceAfterTrackEnd, R.PlayLocalTrack
 
 function R:PlayLocalTrack(song)
     if schedule then
-        if self.soundHandle then StopSound(self.soundHandle); self.soundHandle = nil end
+        self:StopLocalTrack()
         pending = { at = schedule.at + (schedule.offset or 0), song = song, file = schedule.file }
         return
     end
-    return origLocal(self, song)
+    if not changingWorld then return origLocal(self, song) end
 end
 
 local function FirePending()
     local p = pending
     pending = nil
+    if EB.tuned and Now() - p.at > LATE_SLACK then
+        origStop(R)
+        EB.waiting = true
+        return
+    end
     if p.file then
         local copy = {}
         for k, v in pairs(p.song) do copy[k] = v end
@@ -151,6 +158,14 @@ local function FirePending()
         origLocal(R, copy)
     else
         origLocal(R, p.song)
+    end
+    if not R.db.isPlaying then
+        if EB.tuned then
+            EB.missing, EB.waiting = EB.remoteKey, true
+        elseif EB.live then
+            EB.songStart = 0
+            Send("ST", "GUILD")
+        end
     end
 end
 
@@ -675,6 +690,9 @@ function EB:OnMessage(packet, channel, sender)
         if not stamp or stamp ~= stamp or stamp < 0 or stamp > Now() + 30 or #f[2] > 100 then return end
         if op == "NP" and (f[2] == "" or stamp == 0) then return end
     end
+    if op == "RQ" and (#f ~= 2 or f[2] == "" or #f[2] > 100 or Clean(f[2]) ~= f[2]) then return end
+    if op == "HO" and (#f ~= 4 or not self.djs[sender] or not GuildSender(f[2]) or
+        (f[3] ~= "0" and f[3] ~= "1")) then return end
     if not R.Wire.Accept(sender, channel, playbackOps[op] and "playback" or op, epoch, sequence) then return end
     self.peers[Short(sender)] = true
     if op == "CH" then
@@ -709,10 +727,10 @@ function EB:OnMessage(packet, channel, sender)
             if self.tuned == sender then
                 Send("TU", "WHISPER", sender)
                 if d.key ~= "" and d.start > 0 then self:RemotePlay(d.key, d.start)
-                elseif pending or R.db.isPlaying then
+                else
+                    if pending or R.db.isPlaying then origStop(R) end
                     pending = nil
-                    origStop(R)
-                    self.remoteKey, self.remoteStart = nil, nil
+                    self.remoteKey, self.remoteStart, self.missing = nil, nil, nil
                     self.waiting = true
                 end
             end
@@ -728,7 +746,7 @@ function EB:OnMessage(packet, channel, sender)
         if d then d.key = ""; d.start = 0 end
         if self.tuned == sender then
             pending = nil
-            self.remoteKey, self.remoteStart = nil, nil
+            self.remoteKey, self.remoteStart, self.missing = nil, nil, nil
             origStop(R)
             self.waiting = true
         end
@@ -756,8 +774,10 @@ function EB:OnMessage(packet, channel, sender)
             self.listeners[Short(sender)] = Now(); self.listenerFull[Short(sender)] = sender
         end
     elseif op == "TO" then
-        if self.live and self.listeners[Short(sender)] then self:AddChat(nil, Short(sender) .. " left.", true) end
-        self.listeners[Short(sender)], self.listenerFull[Short(sender)] = nil, nil
+        local name = Short(sender)
+        if not self.live or self.listenerFull[name] ~= sender then return end
+        self:AddChat(nil, name .. " left.", true)
+        self.listeners[name], self.listenerFull[name] = nil, nil
     elseif op == "HOF" then
         -- our DJ wants to hand us the set
         if self.tuned == sender then
@@ -793,6 +813,7 @@ function R:Play(index)
     if EB.remotePlaying then return origPlay(self, index) end
     if EB.tuned then EB:TuneOut() end
     if EB.live then
+        pending = nil
         local startAt = Now() + LEAD
         schedule = { at = startAt, offset = 0 }
         origPlay(self, index)
@@ -805,6 +826,9 @@ function R:Play(index)
             EB:DropFromQueue(KeyOf(song))
             Send("NP~" .. KeyOf(song) .. "~" .. Fmt(startAt), "GUILD")
             EB:BroadcastQueue()
+        else
+            EB.songStart = 0
+            Send("ST", "GUILD")
         end
         return
     end
@@ -839,14 +863,13 @@ end
 -- the song-end timer must not fire while a held song hasn't started yet
 local origTick = R.HandlePlaybackTick
 function R:HandlePlaybackTick()
-    if pending then return end
+    if pending or changingWorld then return end
     return origTick(self)
 end
 
 -- ---------- loading screens ----------
--- WoW cuts every sound on a loading screen (entering or leaving an instance). Afterwards, pick the song
--- back up where it would be now: in a room, rejoin the DJ in sync (or wait for the next song);
--- alone, restart the same song from the top. Mid-song join cuts are no longer shipped.
+-- Own the sound handle across transitions. A zone change can leave a sound
+-- playing, so stop it explicitly before recovering playback.
 function EB:ResumeAfterLoading()
     if not R.db then return end
     if self.tuned then
@@ -855,29 +878,41 @@ function EB:ResumeAfterLoading()
         return
     end
     if not R.db.isPlaying or not R.startedAt then return end
-    local song, index = R:GetCurrentSong()
+    local song = R:GetCurrentSong()
     if not song then return end
-    local songStart = Now() - (GetTime() - R.startedAt)
-    local position = Now() - songStart
-    local duration = tonumber(song.duration) or 0
-    if duration > 0 and position >= duration - 2 then return end   -- it was ending anyway; the song-end timer moves on
-    local point, file = self:JoinPoint(KeyOf(song), position)
-    if point and (duration == 0 or point < duration - 5) then
-        ScheduledPlay(index, songStart, point, file)
-        if self.live then self.songStart = songStart end
-        R:Print("Back from the loading screen: " .. (song.title or "the song") .. " picks up in " .. math.ceil(songStart + point - Now()) .. "s.")
-    elseif self.live then
-        R.soundHandle = nil
-        R:Print("No local join point for the current song. The live timeline will continue.")
-    else
-        ScheduledPlay(index, Now() + 0.2, 0)
+    if self.live then
+        if pending and pending.at < Now() - LATE_SLACK then pending = nil end
+        if not pending then R:Print("The live timeline will continue at the next song.") end
+        return
     end
+    local duration = tonumber(song.duration) or 0
+    if duration > 0 and GetTime() - R.startedAt >= duration - 2 then return end
+    ScheduledPlay(nil, Now() + 0.2, 0)
+end
+
+local function SuspendAudio()
+    audioTransition = audioTransition + 1
+    changingWorld = true
+    R:StopLocalTrack()
+end
+
+local function RecoverAudio()
+    if not changingWorld then return end
+    local transition = audioTransition
+    R.After(0.5, function()
+        if not changingWorld or audioTransition ~= transition then return end
+        changingWorld = false
+        EB:ResumeAfterLoading()
+    end)
 end
 
 -- ---------- events ----------
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+ev:RegisterEvent("PLAYER_LEAVING_WORLD")
+ev:RegisterEvent("LOADING_SCREEN_ENABLED")
+ev:RegisterEvent("LOADING_SCREEN_DISABLED")
 ev:RegisterEvent("CHAT_MSG_ADDON")
 ev:RegisterEvent("PLAYER_LOGOUT")
 ev:RegisterEvent("GUILD_ROSTER_UPDATE")
@@ -908,12 +943,15 @@ ev:SetScript("OnEvent", function(_, event, prefix, msg, channel, sender)
         R.db.eb.blocked = R.db.eb.blocked or {}
         if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
         R.After(5, function() Send("HI", "GUILD") end)
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        -- prefix = isInitialLogin, msg = isReloadingUi; only a real loading screen mid-session cut the sound
-        if not prefix and not msg then R.After(0.5, function() EB:ResumeAfterLoading() end) end
+    elseif event == "PLAYER_LEAVING_WORLD" or event == "LOADING_SCREEN_ENABLED" then
+        SuspendAudio()
+    elseif event == "PLAYER_ENTERING_WORLD" or event == "LOADING_SCREEN_DISABLED" then
+        RecoverAudio()
     elseif event == "CHAT_MSG_ADDON" then
         if prefix == PREFIX and msg and sender then EB:OnMessage(msg, channel, sender) end
     elseif event == "PLAYER_LOGOUT" then
+        pending = nil
+        SuspendAudio()
         if EB.live then Send("END", "GUILD") end
         if EB.tuned then Send("TO", "WHISPER", EB.tuned) end
     end
@@ -924,7 +962,7 @@ ev:SetScript("OnUpdate", function(_, elapsed)
     if not R.db then return end
     Calibrate()
     R.Wire.Flush()
-    if pending and Now() >= pending.at then FirePending(); Changed() end
+    if not changingWorld and pending and Now() >= pending.at then FirePending(); Changed() end
     beat = beat + elapsed
     if beat < HEARTBEAT then return end
     beat = 0
