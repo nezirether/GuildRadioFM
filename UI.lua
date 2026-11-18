@@ -532,9 +532,7 @@ function R:CreateMainWindow()
 
     -- header
     f.emblem = f:CreateTexture(nil, "ARTWORK", nil, 4)
-    f.emblem:SetTexture(EMBLEM)
-    f.emblem:SetSize(38, 38)
-    f.emblem:SetPoint("TOPLEFT", 14, -10)
+    f.emblemBinding = Renderer:BindEmblem(f, f.emblem, "header")
     f.logo = Text(f, 26, C.acc, LOGO_FONT)
     f.logo:SetShadowColor(0, 0, 0, 1)
     f.logo:SetShadowOffset(1, -1)
@@ -700,7 +698,7 @@ function R:ApplyBackdrop()
         f.shade:SetAlpha(1)
     else
         f.art:Hide()
-        f.shade:SetAlpha(choice == "forge" and 1 or 0)   -- palette shade keeps text readable over the tile
+        f.shade:SetAlpha(choice == "forge" and 0.55 or 0)   -- palette shade keeps text readable over the tile
     end
 end
 
@@ -777,32 +775,11 @@ function R:BuildNowPage(p)
     local art = CreateFrame("Frame", nil, p)
     art:SetSize(170, 170)
     art:SetPoint("TOPLEFT", 0, -6)
-    Fill(art, C.surface)
-    art.tile = art:CreateTexture(nil, "BACKGROUND", nil, 1)   -- skin texture inside the frame
-    art.tile:SetPoint("TOPLEFT", 1, -1); art.tile:SetPoint("BOTTOMRIGHT", -1, 1)
-    art.halo = KitTex(art, "BORDER", "glow")
-    art.halo:SetSize(170, 170)
-    art.halo:SetPoint("CENTER", 0, 6)
-    Outline(art, C.line)
-    art.trim = Trim(art, 18, 4)
-    art.glow = art:CreateTexture(nil, "ARTWORK")             -- skin crest, pulses while playing
-    art.glow:SetTexture(EMBLEM)
-    art.glow:SetSize(128, 128)
-    art.glow:SetPoint("CENTER", 0, 6)
-    local crest = CreateFrame("Frame", nil, art)
-    crest:SetFrameLevel(art:GetFrameLevel())
-    crest:SetAllPoints(art.glow)
-    Renderer:Bind(crest, "crest", art.glow, "ARTWORK")
+    art.glow = art:CreateTexture(nil, "ARTWORK")
+    art.emblem = Renderer:BindEmblem(art, art.glow, "main")
     art.badge = DJBadge(art, 20)
-    art.badge:SetPoint("BOTTOM", 0, 8)
+    art.badge:SetPoint("BOTTOM", 0, -4)
     p.art = art
-    local t = 0
-    art:SetScript("OnUpdate", function(_, el)
-        t = t + el
-        local a = R.db.isPlaying and (0.8 + 0.2 * math.sin(t * 2.4)) or 0.45
-        art.glow:SetAlpha(math.min(1, a + 0.25))
-        art.halo:SetAlpha(R.db.isPlaying and (0.3 + 0.2 * math.sin(t * 2.4)) or 0.12)
-    end)
     -- flourish beside the "Now playing" line (anchored to the eyebrow once it exists)
     p.decor = p:CreateTexture(nil, "ARTWORK")
     p.decor:SetSize(64, 32)
@@ -1769,31 +1746,22 @@ function R:BuildSkinsPage(p)
         local b = CreateFrame("Button", nil, p)
         b:SetSize(cw, ch)
         b:SetPoint("TOPLEFT", col * (cw + gap), -22 - row * (ch + gap))
-        Fill(b, C.surface)
+        local material = b:CreateTexture(nil, "BACKGROUND")
+        material:SetAllPoints()
+        material:SetTexture(s.art.tile)
+        material:SetVertexColor(0.6,0.6,0.6,1)
         b.thumb = b:CreateTexture(nil, "ARTWORK")
-        b.thumb:SetPoint("TOPLEFT", 1, -1); b.thumb:SetPoint("TOPRIGHT", -1, -1); b.thumb:SetHeight(40)
+        b.thumb:SetPoint("TOPLEFT", 1, -1); b.thumb:SetPoint("TOPRIGHT", -1, -1); b.thumb:SetHeight(42)
         b.thumb:SetTexture(s.art.banner)
-        b.thumb:SetTexCoord(0.42, 1, 0, 0.64)   -- the art band above the tab ledge
+        b.thumb:SetTexCoord(0, 1, 0, 1)   -- the art band above the tab ledge
         b.crest = b:CreateTexture(nil, "OVERLAY")
-        b.crest:SetSize(34, 34)
-        b.crest:SetPoint("LEFT", b.thumb, "LEFT", 4, 0)
-        b.crest:SetTexture(s.art.crest)
+        b.emblemBinding = Renderer:BindEmblem(b, b.crest, "picker", s.key)
         b.name = Text(b, 12, C.text, TITLE_FONT)
-        b.name:SetPoint("BOTTOMLEFT", 8, 9)
-        b.name:SetText(i .. ". " .. s.name)
+        b.name:SetPoint("BOTTOMLEFT", 8, 8)
+        b.name:SetPoint("RIGHT", b, "RIGHT", -8, 0)
+        b.name:SetText(s.name)
         b.tag = Text(b, 10, C.acc, BODY_FONT, "RIGHT")
-        b.tag:SetPoint("BOTTOMRIGHT", -8, 10)
-        -- the skin's own colours, so a card reads correctly whatever skin is active
-        b.chips = {}
-        local sw = { s.tab, s.palette.acc, s.palette.live }
-        for k, c in ipairs(sw) do
-            local chip = b:CreateTexture(nil, "OVERLAY")
-            chip:SetTexture(WHITE)
-            chip:SetVertexColor(c[1], c[2], c[3], 1)
-            chip:SetSize(7, 7)
-            chip:SetPoint("TOPRIGHT", b.thumb, "TOPRIGHT", -4 - (k - 1) * 9, -4)
-            b.chips[k] = chip
-        end
+        b.tag:SetPoint("TOPLEFT", 7, -7)
         b.edge = Outline(b, C.line)
         b.key = s.key
         b.skin = s
@@ -1892,13 +1860,20 @@ function R:ApplySkinArt()
         f.headShade:SetVertexColor(1, 1, 1, 1)
         -- banners carry their own emblem; a separate header mascot/crest is opt-in per skin
         if art.mascot then SetTex(f.mascot, art.mascot) else f.mascot:Hide() end
-        if s.headerCrest then SetTex(f.crestHead, art.crest, EMBLEM) else f.crestHead:Hide() end
+        f.crestHead:Hide()
+        Renderer:PaintEmblem(f.emblemBinding)
         f.logo:SetFont(s.font or LOGO_FONT, 26, "")
         local now = f.pages.now
-        SetTex(now.art.glow, art.crest, EMBLEM)
-        SetTex(now.art.tile, art.tile)
-        now.art.tile:SetVertexColor(1, 1, 1, 0.55)
-        now.art.halo:SetVertexColor(s.palette.acc[1], s.palette.acc[2], s.palette.acc[3], 1)
+        local hasEmblem = Renderer:PaintEmblem(now.art.emblem)
+        if hasEmblem then now.art:Show() else now.art:Hide() end
+        f.logo:ClearAllPoints()
+        f.logo:SetPoint("TOPLEFT", f, "TOPLEFT", f.emblemBinding.available and 62 or 14, -12)
+        local x = hasEmblem and 196 or 20
+        for _, entry in ipairs({{now.eyebrow,-14},{now.title,-32},{now.lyric,-81},{now.bar,-102}}) do
+            entry[1]:ClearAllPoints()
+            entry[1]:SetPoint("TOPLEFT", x, entry[2])
+            if entry[1] ~= now.eyebrow then entry[1]:SetPoint("RIGHT", now, "RIGHT", 0, 0) end
+        end
         SetTex(now.decor, art.decor)
         self:ApplyBackdrop()
         self:PaintTabs()
@@ -1907,9 +1882,16 @@ function R:ApplySkinArt()
     if m then
         SetTex(m.banner, art.banner)
         if art.banner then m.banner:SetTexCoord(0.42, 1, 0, 0.64) end
-        SetTex(m.icon, art.crest, EMBLEM)
+        local hasEmblem = Renderer:PaintEmblem(m.emblemBinding)
+        local x = hasEmblem and 50 or 12
+        m.eyebrow:ClearAllPoints()
+        m.eyebrow:SetPoint("TOPLEFT", x, -10)
+        m.eyebrow:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
+        m.title:ClearAllPoints()
+        m.title:SetPoint("TOPLEFT", x, -23)
+        m.title:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
     end
-    for _, card in ipairs(SKINNED.cards or {}) do SetTex(card.icon, art.crest, EMBLEM) end
+    for _, card in ipairs(SKINNED.cards or {}) do Renderer:PaintEmblem(card.emblemBinding) end
     Renderer:Refresh()
 end
 
@@ -2069,9 +2051,7 @@ function R:CreateMiniWindow()
     Outline(m, C.line)
     m.trim = Trim(m, 16, 3)
     m.icon = m:CreateTexture(nil, "ARTWORK", nil, 3)
-    m.icon:SetTexture(EMBLEM)
-    m.icon:SetSize(34, 34)
-    m.icon:SetPoint("LEFT", 9, 1)
+    m.emblemBinding = Renderer:BindEmblem(m, m.icon, "mini")
     m.play = IconButton(m, "play", 14, function() if R.db.isPlaying then R:Stop() else R:Play() end end, nil, 26)
     m.next = IconButton(m, "next", 12, function() R:Next() end, "Next", 24)
     m.prev = IconButton(m, "prev", 12, function() R:Back() end, "Previous", 24)
@@ -2153,9 +2133,7 @@ local function Card(name, width)
     t.accent = Tex(t, "ARTWORK", C.acc)
     t.accent:SetPoint("TOPLEFT"); t.accent:SetPoint("BOTTOMLEFT"); t.accent:SetWidth(2)
     t.icon = t:CreateTexture(nil, "ARTWORK")
-    t.icon:SetTexture(R:GetActiveSkin().art.crest or EMBLEM)
-    t.icon:SetSize(32, 32)
-    t.icon:SetPoint("LEFT", 12, 0)
+    t.emblemBinding = Renderer:BindEmblem(t, t.icon, "popup")
     SKINNED.cards = SKINNED.cards or {}
     SKINNED.cards[#SKINNED.cards + 1] = t
     t.eyebrow = Text(t, 9, C.faint)

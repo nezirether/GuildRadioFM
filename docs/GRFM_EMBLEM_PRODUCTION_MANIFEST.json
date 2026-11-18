@@ -1,0 +1,626 @@
+{
+  "trogdor": {
+    "source": "assets/trogdor/emblem.png",
+    "output": "Media/Skins/trogdor/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Torn parchment dragon",
+    "art_direction": "Asymmetric burnt parchment with original green burninating dragon, crimson cloth and bronze pins",
+    "placements": {
+      "main": {
+        "width": 164,
+        "height": 144,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 46,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 33,
+        "height": 29,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 32,
+        "height": 32,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 34,
+        "height": 32,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "alliance": {
+    "source": "assets/alliance/emblem.png",
+    "output": "Media/Skins/alliance/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Ceremonial lion shield",
+    "art_direction": "Tall royal blue heraldic shield, original gold lion, winged gold metalwork",
+    "placements": {
+      "main": {
+        "width": 128,
+        "height": 160,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 41,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 26,
+        "height": 32,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 28,
+        "height": 35,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 28,
+        "height": 35,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "horde": {
+    "source": "assets/horde/emblem.png",
+    "output": "Media/Skins/horde/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Split war banner",
+    "art_direction": "Forked crimson war banner, dark iron axe brackets and rugged spiked crown",
+    "placements": {
+      "main": {
+        "width": 148,
+        "height": 164,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 46,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 30,
+        "height": 33,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 32,
+        "height": 36,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 33,
+        "height": 36,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "undercity": {
+    "source": "assets/undercity/emblem.png",
+    "output": "Media/Skins/undercity/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Bone reliquary",
+    "art_direction": "Angular gothic bone arch, alchemical glass and plague green light on purple stone",
+    "placements": {
+      "main": {
+        "width": 142,
+        "height": 160,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 45,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 28,
+        "height": 32,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 31,
+        "height": 35,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 31,
+        "height": 35,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "org": {
+    "source": "assets/org/emblem.png",
+    "output": "Media/Skins/org/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Tusk standard",
+    "art_direction": "Broad tribal red leather standard suspended between timber and asymmetric tusks",
+    "placements": {
+      "main": {
+        "width": 160,
+        "height": 148,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 46,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 32,
+        "height": 30,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 32,
+        "height": 33,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 34,
+        "height": 33,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "stormwind": {
+    "source": "assets/stormwind/emblem.png",
+    "output": "Media/Skins/stormwind/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Architectural pennant",
+    "art_direction": "Long blue swallowtail pennant, gold lion heraldry, white stone finials",
+    "placements": {
+      "main": {
+        "width": 120,
+        "height": 164,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 38,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 24,
+        "height": 33,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 26,
+        "height": 36,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 26,
+        "height": 36,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "thunderbluff": {
+    "source": "assets/thunderbluff/emblem.png",
+    "output": "Media/Skins/thunderbluff/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Feathered totem",
+    "art_direction": "Tall carved wood totem, turquoise inlay and offset feathers",
+    "placements": {
+      "main": {
+        "width": 112,
+        "height": 166,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 36,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 22,
+        "height": 33,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 25,
+        "height": 36,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 25,
+        "height": 37,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "darnassus": {
+    "source": "assets/darnassus/emblem.png",
+    "output": "Media/Skins/darnassus/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Crescent bough",
+    "art_direction": "Open silver crescent embracing ancient violet wood and irregular vines",
+    "placements": {
+      "main": {
+        "width": 156,
+        "height": 144,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 46,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 31,
+        "height": 29,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 32,
+        "height": 32,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 34,
+        "height": 32,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "ironforge": {
+    "source": "assets/ironforge/emblem.png",
+    "output": "Media/Skins/ironforge/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Forge anvil",
+    "art_direction": "Wide dwarven anvil, bronze geometric runes, stone and forge aperture",
+    "placements": {
+      "main": {
+        "width": 162,
+        "height": 136,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 46,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 32,
+        "height": 27,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 32,
+        "height": 30,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 34,
+        "height": 30,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "bloodmoon": {
+    "source": "assets/bloodmoon/emblem.png",
+    "output": "Media/Skins/bloodmoon/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Gothic blade",
+    "art_direction": "Obsidian lancet and torn crimson eclipse, pointed cathedral silhouette",
+    "placements": {
+      "main": {
+        "width": 128,
+        "height": 164,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 41,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 26,
+        "height": 33,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 28,
+        "height": 36,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 28,
+        "height": 36,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "sleek": {
+    "source": "assets/sleek/emblem.png",
+    "output": "Media/Skins/sleek/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Faceted monogram",
+    "art_direction": "Open offset dark-glass geometric planes with subtle cyan edge light",
+    "placements": {
+      "main": {
+        "width": 144,
+        "height": 116,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 46,
+        "height": 37,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 29,
+        "height": 24,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 32,
+        "height": 26,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 32,
+        "height": 26,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "classic": {
+    "source": "assets/classic/emblem.png",
+    "output": "Media/Skins/classic/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Folded parchment",
+    "art_direction": "Uneven parchment scroll, bronze corner fasteners and original music heraldry",
+    "placements": {
+      "main": {
+        "width": 158,
+        "height": 140,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 46,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 32,
+        "height": 28,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 32,
+        "height": 31,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 34,
+        "height": 31,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  },
+  "retail": {
+    "source": "assets/retail/emblem.png",
+    "output": "Media/Skins/retail/emblem.tga",
+    "width": 512,
+    "height": 512,
+    "format": "RGBA",
+    "background": "transparent",
+    "silhouette": "Crystal spire",
+    "art_direction": "Vertical luminous blue crystal with asymmetric layered polished gold wings",
+    "placements": {
+      "main": {
+        "width": 124,
+        "height": 164,
+        "anchor": "CENTER",
+        "x": 0,
+        "y": 4
+      },
+      "picker": {
+        "width": 40,
+        "height": 40,
+        "anchor": "TOPRIGHT",
+        "x": -10,
+        "y": -6
+      },
+      "mini": {
+        "width": 25,
+        "height": 33,
+        "anchor": "LEFT",
+        "x": 9,
+        "y": 0
+      },
+      "popup": {
+        "width": 27,
+        "height": 36,
+        "anchor": "LEFT",
+        "x": 10,
+        "y": 0
+      },
+      "header": {
+        "width": 27,
+        "height": 36,
+        "anchor": "TOPLEFT",
+        "x": 14,
+        "y": -8
+      }
+    },
+    "status": "awaiting original ChatGPT artwork"
+  }
+}

@@ -14,6 +14,29 @@ spec.loader.exec_module(builder)
 
 
 class SkinPipelineTests(unittest.TestCase):
+    def test_emblem_alpha_and_bounds(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            source = base / 'assets/trogdor'
+            source.mkdir(parents=True)
+            image = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
+            image.paste((120, 60, 30, 255), (100, 20, 400, 480))
+            image.save(source / 'emblem.png')
+            manifest = {'trogdor': {'emblem': {'file': 'emblem.png'}}}
+            output = base / 'output'
+            builder.compile_assets(manifest, base / 'assets', output)
+            lua = LuaRuntime()
+            lua.execute('GuildRadioFM = {}')
+            lua.execute((ROOT / 'Skins.lua').read_text(encoding='utf-8'))
+            lua.execute((ROOT / 'SkinRenderer.lua').read_text(encoding='utf-8'))
+            lua.execute((output / 'SkinAssets.lua').read_text(encoding='utf-8'))
+            emblem = lua.globals().GuildRadioFM.SkinRenderer.assets.trogdor.emblem
+            self.assertEqual(list(emblem.bounds.values()), [100, 20, 400, 480])
+            Image.new('RGBA', (512, 512), (0, 0, 0, 255)).save(source / 'emblem.png')
+            with self.assertRaises(ValueError):
+                builder.compile_assets(manifest, base / 'assets', base / 'opaque-output')
+            self.assertFalse((base / 'opaque-output').exists())
+
     def test_conversion_and_registration(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)

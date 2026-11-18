@@ -60,8 +60,9 @@ for _,skin in ipairs(r.SkinList) do
         surfaces[role]={path=skin.key.."-"..role..".tga",width=256,height=256,mode="nine",
             insets={8,8,8,8}}
     end
-    assert(r.RegisterSkinAssets(skin.key,{surfaces=surfaces,icons={path=skin.key.."-icons.tga",
-        width=512,height=256,cell=64,columns=8}}))
+    assert(r.RegisterSkinAssets(skin.key,{surfaces=surfaces,
+        emblem={path=skin.key.."-emblem.tga",width=512,height=512,mode="contain",bounds={80,20,420,480}},
+        icons={path=skin.key.."-icons.tga",width=512,height=256,cell=64,columns=8}}))
     r:SetSkin(skin.key)
     for _,tab in ipairs({"now","library","playlists","live","skins","settings"}) do
         r:ShowTab(tab)

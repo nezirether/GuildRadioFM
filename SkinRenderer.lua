@@ -1,6 +1,6 @@
 -- Descriptor renderer for legacy texture APIs. No client NineSlice dependency.
 local R = GuildRadioFM
-local Renderer = {surfaces = {}, icons = {}, assets = {}}
+local Renderer = {surfaces = {}, icons = {}, emblems = {}, assets = {}}
 R.SkinRenderer = Renderer
 R.SkinIconNames = {"play", "pause", "stop", "prev", "next", "shuffle", "repeat", "volume",
     "mute", "library", "playlists", "queue", "live", "settings", "search", "heart",
@@ -37,12 +37,24 @@ local function validDescriptor(d)
     return true
 end
 
+local loadTexture
+
 function R.RegisterSkinAssets(key, assets)
     if not R.SkinByKey[key] or type(assets) ~= "table" then return false end
     for _, d in pairs(assets.surfaces or {}) do
         if not validDescriptor(d) then return false end
     end
     local icons = assets.icons
+    local emblem = assets.emblem
+    if emblem then
+        if not validDescriptor(emblem) or emblem.width ~= 512 or emblem.height ~= 512 then return false end
+        local bounds = emblem.bounds
+        if type(bounds) ~= "table" or #bounds ~= 4 then return false end
+        for i=1,4 do
+            if type(bounds[i]) ~= "number" or bounds[i] ~= bounds[i] or bounds[i] < 0 or bounds[i] > 512 then return false end
+        end
+        if bounds[1] >= bounds[3] or bounds[2] >= bounds[4] then return false end
+    end
     if icons then
         if type(icons.path) ~= "string" or icons.width ~= 512 or icons.height ~= 256 or
             icons.cell ~= 64 or icons.columns ~= 8 then return false end
@@ -54,7 +66,40 @@ function R.RegisterSkinAssets(key, assets)
     return true
 end
 
-local function loadTexture(texture, path)
+-- Draw only reviewed transparent emblems. Legacy circular crests are retired.
+-- Alpha bounds determine the painted aspect independently of the square source.
+function Renderer:PaintEmblem(binding)
+    local skin = binding.skin or R:GetActiveSkin().key
+    local asset = self.assets[skin]
+    local emblem = asset and asset.emblem
+    local texture = binding.texture
+    if not emblem or not loadTexture(texture, emblem.path) then
+        texture:Hide()
+        binding.available = false
+        return false
+    end
+    local layout = R.SkinByKey[skin].emblemLayout[binding.context]
+    local box = emblem.bounds
+    local paintedWidth, paintedHeight = box[3]-box[1], box[4]-box[2]
+    local scale = math.min(layout.width/paintedWidth, layout.height/paintedHeight)
+    texture:ClearAllPoints()
+    texture:SetPoint(layout.anchor, binding.parent, layout.anchor, layout.x, layout.y)
+    texture:SetSize(paintedWidth*scale,paintedHeight*scale)
+    texture:SetTexCoord(box[1]/512,box[3]/512,box[2]/512,box[4]/512)
+    texture:SetVertexColor(1,1,1,1)
+    texture:Show()
+    binding.available = true
+    return true
+end
+
+function Renderer:BindEmblem(parent, texture, context, skin)
+    local binding = {parent=parent,texture=texture,context=context,skin=skin}
+    self.emblems[#self.emblems+1] = binding
+    self:PaintEmblem(binding)
+    return binding
+end
+
+loadTexture = function(texture, path)
     local ok, loaded = pcall(texture.SetTexture, texture, path)
     return ok and loaded ~= false
 end
@@ -186,4 +231,5 @@ end
 function Renderer:Refresh()
     for _, binding in ipairs(self.surfaces) do self:Paint(binding) end
     for _, binding in ipairs(self.icons) do self:PaintIcon(binding) end
+    for _, binding in ipairs(self.emblems) do self:PaintEmblem(binding) end
 end

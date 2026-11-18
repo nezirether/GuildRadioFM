@@ -84,6 +84,21 @@ def compile_assets(manifest, source, output):
         if not set(surfaces).issubset(ROLES):
             raise ValueError('Unknown surface role')
         registered = {'surfaces': {role: descriptor(skin, item) for role, item in surfaces.items()}}
+        if 'emblem' in assets:
+            filename = assets['emblem']['file']
+            path, width, height = image_file(skin, filename)
+            image = images[(skin, filename)]
+            if (width, height) != (512, 512):
+                raise ValueError('Production emblem must be 512 by 512 RGBA')
+            alpha = image.getchannel('A')
+            bounds = alpha.getbbox()
+            if bounds is None or alpha.getextrema()[0] != 0:
+                raise ValueError('Emblem needs painted content and a transparent background')
+            if any(alpha.getpixel(point) != 0 for point in
+                   ((0, 0), (511, 0), (0, 511), (511, 511))):
+                raise ValueError('Emblem canvas corners must be fully transparent')
+            registered['emblem'] = {'path': path, 'width': width, 'height': height,
+                                    'mode': 'contain', 'bounds': list(bounds)}
         if 'icons' in assets:
             data = assets['icons']
             path, width, height = image_file(skin, data['file'])

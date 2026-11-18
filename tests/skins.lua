@@ -95,4 +95,27 @@ end
 R.db.skin="future-skin"
 renderer:Refresh()
 assert(R.db.skin=="future-skin" and R:GetActiveSkin().key=="classic")
+local emblemTexture = widget()
+local emblemBinding = renderer:BindEmblem(frame, emblemTexture, "main")
+assert(not emblemTexture.visible and not emblemBinding.available)
+for _, skin in ipairs(R.SkinList) do
+    R.db.skin = skin.key
+    assert(R.RegisterSkinAssets(skin.key,{emblem={path="emblem.tga",width=512,height=512,
+        mode="contain",bounds={100,20,400,480}}}))
+    renderer:Refresh()
+    assert(emblemTexture.visible and emblemBinding.available)
+    assert(math.abs(emblemTexture.width/emblemTexture.height-300/460)<0.00001)
+    local layout=skin.emblemLayout.main
+    assert(emblemTexture.width<=layout.width and emblemTexture.height<=layout.height)
+    local picker=skin.emblemLayout.picker
+    assert(picker.height<=40 and picker.y-picker.height>=-46)
+    assert(emblemTexture.uv[1]==100/512 and emblemTexture.uv[2]==400/512)
+end
+assert(not R.RegisterSkinAssets("trogdor",{emblem={path="x",width=128,height=128,bounds={0,0,128,128}}}))
+assert(not R.RegisterSkinAssets("trogdor",{emblem={path="x",width=512,height=512,bounds={400,0,100,512}}}))
+R.db.skin="trogdor"
+R.RegisterSkinAssets("trogdor",{emblem={path="missing.tga",width=512,height=512,bounds={10,10,500,500}}})
+renderer:Refresh()
+assert(not emblemTexture.visible and not emblemBinding.available)
+print("PASS: 13 emblem viewports, painted aspect, transparent padding, picker safe zone and rejected legacy fallback")
 print("PASS: 13 skin descriptors, 32 icon regions, states, geometry, resize, missing assets and saved preferences")
