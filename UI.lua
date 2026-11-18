@@ -3,6 +3,7 @@
 -- loading-screen art, WoW gold accent, Morpheus title,
 -- custom art in Media/ (made by tools/make_art.py). No stock Blizzard button templates.
 local R = GuildRadioFM
+local Renderer = R.SkinRenderer
 local MEDIA = "Interface\\AddOns\\GuildRadioFM\\Media\\"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local EMBLEM = MEDIA .. "GuildRadioFM_Emblem.tga"
@@ -93,6 +94,10 @@ local function Trim(frame, corner, thick, layer)
         trim[#trim + 1] = x
     end
     SKINNED.trims[#SKINNED.trims + 1] = trim
+    local fallback = {}
+    function fallback:Show() for _, texture in ipairs(trim) do texture:Show() end end
+    function fallback:Hide() for _, texture in ipairs(trim) do texture:Hide() end end
+    Renderer:Bind(frame, "outer", fallback, layer or "ARTWORK", 3)
     return trim
 end
 
@@ -115,6 +120,8 @@ end
 local function Fill(frame, c, a)
     local t = Tex(frame, "BACKGROUND", c, a)
     t:SetAllPoints()
+    -- Decorative panel artwork sits behind live labels and controls.
+    if c == C.surface then Renderer:Bind(frame, "panel", t, "BACKGROUND", 0) end
     return t
 end
 
@@ -145,13 +152,42 @@ end
 local function SetColor(fs, c) fs:SetTextColor(c[1], c[2], c[3], c[4] or 1) end
 
 local function Icon(parent, name, size, layer)
-    local t = parent:CreateTexture(nil, layer or "ARTWORK")
-    t:SetTexture(ATLAS)
-    t:SetSize(size, size)
-    local i = ICONS[name] or 0
-    t:SetTexCoord(i / 16, (i + 1) / 16, 0, 1)
-    t.SetIcon = function(selfT, n) local k = ICONS[n] or 0; selfT:SetTexCoord(k / 16, (k + 1) / 16, 0, 1) end
-    return t
+    local texture = parent:CreateTexture(nil, layer or "ARTWORK")
+    texture:SetSize(size, size)
+    local originalColor = texture.SetVertexColor
+    local binding = Renderer:BindIcon(texture, name)
+    texture.SetVertexColor = function(selfT, ...)
+        if selfT.customSkinIcon then originalColor(selfT, 1,1,1,1)
+        else originalColor(selfT, ...) end
+    end
+    texture.skinIcon = binding
+    texture.SetIcon = function(_, value) binding:SetIcon(value) end
+    return texture
+end
+
+local function BindSurface(frame, role, fallback, layer, sublevel)
+    local binding = Renderer:Bind(frame, role, fallback, layer, sublevel)
+    if frame.HookScript then
+        frame:HookScript("OnMouseDown", function()
+            binding:SetState(frame.disabled and "disabled" or "pressed")
+            if frame.icon and frame.icon.skinIcon then frame.icon.skinIcon:SetState(binding.state) end
+        end)
+        frame:HookScript("OnMouseUp", function()
+            local state = frame.disabled and "disabled" or
+                ((frame.active or frame.on or frame.selected) and "selected" or (frame.skinHovered and "hover" or "normal"))
+            binding:SetState(state)
+            if frame.icon and frame.icon.skinIcon then frame.icon.skinIcon:SetState(state) end
+        end)
+    end
+    return binding
+end
+
+local function PaintSurface(frame, hovered)
+    frame.skinHovered = hovered
+    local state = frame.disabled and "disabled" or
+        ((frame.active or frame.on or frame.selected) and "selected" or (hovered and "hover" or "normal"))
+    if frame.skinSurface then frame.skinSurface:SetState(state) end
+    if frame.icon and frame.icon.skinIcon then frame.icon.skinIcon:SetState(state) end
 end
 
 local function Tip(frame, text)
@@ -186,7 +222,9 @@ local function IconButton(parent, name, size, onClick, tip, box)
         local c = self.active and C.acc or (h and C.text or C.dim)
         if self.disabled then c = C.faint end
         self.icon:SetVertexColor(c[1], c[2], c[3], 1)
+        PaintSurface(self, h)
     end
+    b.skinSurface = BindSurface(b, "transport", nil, "BACKGROUND", 2)
     function b:Hover(h) self:Paint(h) end
     function b:SetActive(on) self.active = on and true or false; self:Paint(false) end
     function b:SetDisabledLook(off) self.disabled = off; self:Paint(false) end
@@ -218,6 +256,7 @@ local function TextButton(parent, label, width, height, onClick, style)
     b.face:SetAllPoints()
     SKINNED.faces[#SKINNED.faces + 1] = b.face
     b.edge = Outline(b, C.line)
+    b.skinSurface = BindSurface(b, "button", b.face, "ARTWORK", 1)
     b.label = Text(b, 12, C.text, BODY_FONT, "CENTER")
     b.label:SetPoint("CENTER")
     b.label:SetText(label)
@@ -230,6 +269,7 @@ local function TextButton(parent, label, width, height, onClick, style)
         self.bg:SetVertexColor(math.min(1, c[1] + lift), math.min(1, c[2] + lift), math.min(1, c[3] + lift), self.disabled and 0.4 or 1)
         SetColor(self.label, self.disabled and C.faint or tc)
         for _, e in ipairs(self.edge) do e:SetAlpha(self.style == "ghost" and 1 or 0) end
+        PaintSurface(self, h)
     end
     function b:Hover(h) self:Paint(h) end
     function b:SetLabel(t) self.label:SetText(t) end
@@ -251,6 +291,7 @@ local function Pill(parent, label, onClick)
         self.on = on
         self.bg:SetVertexColor(on and C.acc[1] * 0.35 or C.raised[1], on and C.acc[2] * 0.35 or C.raised[2], on and C.acc[3] * 0.4 or C.raised[3], 1)
         SetColor(self.label, on and C.text or C.dim)
+        PaintSurface(self, false)
     end
     local paint = b.Paint
     function b:Paint(h) paint(self, h); if self.on ~= nil then self:SetOn(self.on) end end
@@ -286,6 +327,7 @@ local function DJBadge(parent, h)
     b:SetHeight(h)
     b.bg = KitTex(b, "BACKGROUND", "badge")
     b.bg:SetAllPoints()
+    b.skinSurface = BindSurface(b, "badge", b.bg, "BACKGROUND", 1)
     b.mic = Icon(b, "live", math.floor(h * 0.62))
     b.mic:SetPoint("LEFT", math.floor(h * 0.42), 0)
     b.label = Text(b, h >= 20 and 11 or 10, C.text, BODY_FONT)
@@ -338,6 +380,15 @@ local function Slider(parent, width, onChange)
     s.fill:SetPoint("LEFT", s.track, "LEFT"); s.fill:SetHeight(4)
     s.knob = Tex(s, "OVERLAY", C.text)
     s.knob:SetSize(10, 10)
+    local function volumeSurface(texture, role)
+        local holder = CreateFrame("Frame", nil, s)
+    holder:SetFrameLevel(s:GetFrameLevel())
+        holder:SetAllPoints(texture)
+        Renderer:Bind(holder, role, texture, "ARTWORK")
+    end
+    volumeSurface(s.track, "volumeTrack")
+    volumeSurface(s.fill, "volumeFill")
+    volumeSurface(s.knob, "volumeThumb")
     function s:SetValue(v)
         v = math.max(0, math.min(100, v or 0))
         self.value = v
@@ -382,7 +433,11 @@ local function List(parent, rowH, nRows, build, render, items, scrollKey)
         row.mark = Tex(row, "ARTWORK", C.acc)
         row.mark:SetPoint("TOPLEFT"); row.mark:SetPoint("BOTTOMLEFT"); row.mark:SetWidth(2)
         row.mark:Hide()
-        function row:Hover(h) self.hl:SetAlpha(h and 0.045 or (self.selected and 0.03 or 0)) end
+        row.skinSurface = BindSurface(row, "queueRow", nil, "BACKGROUND", 1)
+        function row:Hover(h)
+            self.hl:SetAlpha(h and 0.045 or (self.selected and 0.03 or 0))
+            PaintSurface(self, h)
+        end
         row.wheel = scroll
         Wheel(row, scroll)
         build(row)
@@ -452,6 +507,15 @@ function R:CreateMainWindow()
     f.shade:SetAllPoints()
     f.headShade = f:CreateTexture(nil, "BACKGROUND", nil, 3) -- skin banner
     f.headShade:SetPoint("TOPLEFT"); f.headShade:SetPoint("TOPRIGHT"); f.headShade:SetHeight(88)
+    local header = CreateFrame("Frame", nil, f)
+    header:SetFrameLevel(f:GetFrameLevel())
+    header:SetPoint("TOPLEFT"); header:SetPoint("TOPRIGHT"); header:SetHeight(55)
+    Renderer:Bind(header, "header", f.headShade, "BACKGROUND", 3)
+    local skinBackground = Renderer:Bind(f, "background", nil, "BACKGROUND", 1)
+    skinBackground.enabled = function()
+        local choice = R.db.backdrop
+        return choice ~= "kalimdor" and choice ~= "eastern" and choice ~= "none"
+    end
     f.headFoot = KitTex(f, "BORDER", "shine")                -- sheen along the banner's foot
     f.headFoot:SetPoint("TOPLEFT", 0, -82); f.headFoot:SetPoint("TOPRIGHT", 0, -82); f.headFoot:SetHeight(8)
     f.headFoot:SetVertexColor(0, 0, 0, 0.6)
@@ -468,9 +532,7 @@ function R:CreateMainWindow()
 
     -- header
     f.emblem = f:CreateTexture(nil, "ARTWORK", nil, 4)
-    f.emblem:SetTexture(EMBLEM)
-    f.emblem:SetSize(38, 38)
-    f.emblem:SetPoint("TOPLEFT", 14, -10)
+    f.emblemBinding = Renderer:BindEmblem(f, f.emblem, "header")
     f.logo = Text(f, 26, C.acc, LOGO_FONT)
     f.logo:SetShadowColor(0, 0, 0, 1)
     f.logo:SetShadowOffset(1, -1)
@@ -496,6 +558,7 @@ function R:CreateMainWindow()
         local b = CreateFrame("Button", nil, f)
         b.face = KitTex(b, "BACKGROUND", "tab")
         b.face:SetAllPoints()
+        b.skinSurface = BindSurface(b, "tab", b.face, "BACKGROUND", 1)
         b.label = Text(b, 13, C.dim, BODY_FONT, "CENTER")
         b.label:SetText(label)
         b.label:SetPoint("CENTER", 0, -1)
@@ -516,6 +579,8 @@ function R:CreateMainWindow()
         function b:Hover(h)
             self.hover = h
             R:PaintTab(self)
+            self.selected = R.db.tab == key
+            PaintSurface(self, h)
             if R.db.tab ~= key then SetColor(self.label, h and C.text or C.dim) end
         end
         Tip(b, nil)
@@ -633,7 +698,7 @@ function R:ApplyBackdrop()
         f.shade:SetAlpha(1)
     else
         f.art:Hide()
-        f.shade:SetAlpha(choice == "forge" and 1 or 0)   -- palette shade keeps text readable over the tile
+        f.shade:SetAlpha(choice == "forge" and 0.55 or 0)   -- palette shade keeps text readable over the tile
     end
 end
 
@@ -644,6 +709,8 @@ function R:PaintTab(b)
     local c = on and skin.tab or skin.tabOff
     local lift = (b.hover and not on) and 0.06 or 0
     b.face:SetVertexColor(math.min(1, c[1] + lift), math.min(1, c[2] + lift), math.min(1, c[3] + lift), 1)
+    b.selected = on
+    PaintSurface(b, b.hover)
 end
 
 function R:PaintTabs()
@@ -692,11 +759,11 @@ end
 function R:StatusLine()
     local eb = EB()
     if eb and eb.live then return "ON AIR", C.live end
-    if eb and eb.tuned then return "TUNED IN  ·  " .. string.upper(eb.Short(eb.tuned)), C.acc2 end
+    if eb and eb.tuned then return "TUNED IN  Â·  " .. string.upper(eb.Short(eb.tuned)), C.acc2 end
     if self.db.isPlaying then
         if self.db.playFromPlaylist then
             local p = self:GetSelectedPlaylist()
-            return "PLAYLIST  ·  " .. string.upper(p and p.name or ""), C.faint
+            return "PLAYLIST  Â·  " .. string.upper(p and p.name or ""), C.faint
         elseif self.db.playFromFavorites then return "LIKED SONGS", C.faint end
         return "NOW PLAYING", C.faint
     end
@@ -708,31 +775,18 @@ function R:BuildNowPage(p)
     local art = CreateFrame("Frame", nil, p)
     art:SetSize(170, 170)
     art:SetPoint("TOPLEFT", 0, -6)
-    Fill(art, C.surface)
-    art.tile = art:CreateTexture(nil, "BACKGROUND", nil, 1)   -- skin texture inside the frame
-    art.tile:SetPoint("TOPLEFT", 1, -1); art.tile:SetPoint("BOTTOMRIGHT", -1, 1)
-    art.halo = KitTex(art, "BORDER", "glow")
-    art.halo:SetSize(170, 170)
-    art.halo:SetPoint("CENTER", 0, 6)
-    Outline(art, C.line)
-    art.trim = Trim(art, 18, 4)
-    art.glow = art:CreateTexture(nil, "ARTWORK")             -- skin crest, pulses while playing
-    art.glow:SetTexture(EMBLEM)
-    art.glow:SetSize(128, 128)
-    art.glow:SetPoint("CENTER", 0, 6)
+    art.glow = art:CreateTexture(nil, "ARTWORK")
+    art.emblem = Renderer:BindEmblem(art, art.glow, "main")
     art.badge = DJBadge(art, 20)
-    art.badge:SetPoint("BOTTOM", 0, 8)
+    art.badge:SetPoint("BOTTOM", 0, -4)
     p.art = art
-    local t = 0
-    art:SetScript("OnUpdate", function(_, el)
-        t = t + el
-        local a = R.db.isPlaying and (0.8 + 0.2 * math.sin(t * 2.4)) or 0.45
-        art.glow:SetAlpha(math.min(1, a + 0.25))
-        art.halo:SetAlpha(R.db.isPlaying and (0.3 + 0.2 * math.sin(t * 2.4)) or 0.12)
-    end)
     -- flourish beside the "Now playing" line (anchored to the eyebrow once it exists)
     p.decor = p:CreateTexture(nil, "ARTWORK")
     p.decor:SetSize(64, 32)
+    local decor = CreateFrame("Frame", nil, p)
+    decor:SetFrameLevel(p:GetFrameLevel())
+    decor:SetAllPoints(p.decor)
+    Renderer:Bind(decor, "decor", p.decor, "ARTWORK")
 
     local x = 196
     p.eyebrow = Eyebrow(p, "Now playing")
@@ -757,6 +811,11 @@ function R:BuildNowPage(p)
     Fill(p.bar, C.raised)
     p.barFill = Tex(p.bar, "ARTWORK", C.acc)
     p.barFill:SetPoint("TOPLEFT"); p.barFill:SetPoint("BOTTOMLEFT")
+    Renderer:Bind(p.bar, "progressTrack", nil, "BACKGROUND")
+    local progressFill = CreateFrame("Frame", nil, p.bar)
+    progressFill:SetFrameLevel(p.bar:GetFrameLevel())
+    progressFill:SetAllPoints(p.barFill)
+    Renderer:Bind(progressFill, "progressFill", p.barFill, "ARTWORK")
     p.elapsed = Text(p, 11, C.dim)
     p.elapsed:SetPoint("TOPLEFT", p.bar, "BOTTOMLEFT", 0, -6)
     p.total = Text(p, 11, C.dim, BODY_FONT, "RIGHT")
@@ -774,9 +833,13 @@ function R:BuildNowPage(p)
     p.play.bg:SetPoint("TOPLEFT", -4, 4); p.play.bg:SetPoint("BOTTOMRIGHT", 4, -4)
     p.play.bg:SetVertexColor(C.acc[1], C.acc[2], C.acc[3], 1)
     p.play.icon = Icon(p.play, "play", 22)
+    p.play.skinSurface = BindSurface(p.play, "transport", p.play.bg, "BACKGROUND", 1)
     p.play.icon:SetPoint("CENTER", 1, 0)
     p.play.icon:SetVertexColor(0.05, 0.04, 0.09)
-    function p.play:Hover(h) self.bg:SetVertexColor(math.min(1, C.acc[1] + (h and 0.08 or 0)), math.min(1, C.acc[2] + (h and 0.08 or 0)), math.min(1, C.acc[3]), 1) end
+    function p.play:Hover(h)
+        self.bg:SetVertexColor(math.min(1, C.acc[1] + (h and 0.08 or 0)), math.min(1, C.acc[2] + (h and 0.08 or 0)), math.min(1, C.acc[3]), 1)
+        PaintSurface(self, h)
+    end
     SKINNED.widgets[#SKINNED.widgets + 1] = { Paint = function() p.play:Hover(false) end }
     Tip(p.play, nil)
     p.play:SetScript("OnClick", function() if R.db.isPlaying then R:Stop() else R:Play() end end)
@@ -843,7 +906,7 @@ function R:UpdateNowPage()
     elseif eb and eb:JoiningIn() then sub = string.format("Scheduled start in %ds", math.ceil(eb:JoiningIn()))
     else
         sub = song and (song.artist or (song.id and string.match(song.id, "^noyze") and "Noyze Komplaynt") or "Guild library") or "Add songs in SongList.lua"
-        if song then sub = sub .. "  ·  " .. index .. " of " .. self:GetSongCount() end
+        if song then sub = sub .. "  Â·  " .. index .. " of " .. self:GetSongCount() end
     end
     p.sub:SetText(sub)
     p.play.icon:SetIcon(self.db.isPlaying and "stop" or "play")
@@ -862,7 +925,7 @@ function R:UpdateNowPage()
         local d = eb.tuned and eb.djs[eb.tuned] or dj
         local name = d and d.name or eb.Short(eb.tuned)
         local count = d and d.count or 0
-        p.banner.text:SetText(eb.tuned and ("In " .. (d and d.room or (name .. "'s Room")) .. "  ·  " .. count .. " tuned in") or ((d and d.room or (name .. "'s Room")) .. " is open  ·  " .. count .. " tuned in"))
+        p.banner.text:SetText(eb.tuned and ("In " .. (d and d.room or (name .. "'s Room")) .. "  Â·  " .. count .. " tuned in") or ((d and d.room or (name .. "'s Room")) .. " is open  Â·  " .. count .. " tuned in"))
         p.banner.btn:SetLabel(eb.tuned and "Tune out" or "Tune in")
         p.banner.btn:SetStyle(eb.tuned and "ghost" or "primary")
         p.banner:Show()
@@ -1191,7 +1254,7 @@ function R:UpdatePlaylistWindow()
     local p = self.mainFrame.pages.playlists
     local pl = self:GetSelectedPlaylist()
     p.head:SetText(pl and pl.name or "Playlists")
-    p.headSub:SetText(pl and ((#(pl.songs or {})) .. " songs" .. (pl.runtime and "  ·  song pack" or "")) or "Make one with the box on the left")
+    p.headSub:SetText(pl and ((#(pl.songs or {})) .. " songs" .. (pl.runtime and "  Â·  song pack" or "")) or "Make one with the box on the left")
     local fixed = not pl or pl.runtime
     p.del:SetDisabledLook(fixed)
     p.clear:SetDisabledLook(fixed)
@@ -1321,7 +1384,7 @@ function R:BuildLivePage(p)
         row.who:SetText(item.owner or "")
         local late = age >= eb.OVERDUE
         local wait = age < 60 and "now" or (math.floor(age / 60) .. "m")
-        row.meta:SetText((late and "|cffffb030" or "") .. item.votes .. (item.votes == 1 and " vote" or " votes") .. "  ·  " .. wait .. (late and "|r" or ""))
+        row.meta:SetText((late and "|cffffb030" or "") .. item.votes .. (item.votes == 1 and " vote" or " votes") .. "  Â·  " .. wait .. (late and "|r" or ""))
     end, function()
         local eb = EB()
         if eb.live then eb:SortQueue(); return eb.queue end
@@ -1337,7 +1400,7 @@ function R:BuildLivePage(p)
     end
     p.qFoot = Text(p, 10, C.faint)
     p.qFoot:SetPoint("BOTTOMLEFT", 0, 4)
-    p.qFoot:SetText("5 requests each  ·  3+ min waiting goes first, then votes")
+    p.qFoot:SetText("5 requests each  Â·  3+ min waiting goes first, then votes")
 
     -- right column: room chat or requests
     p.rHead = Eyebrow(p, "")
@@ -1446,7 +1509,7 @@ function R:UpdateLive()
     if f then
         local someone = eb.live or eb.tuned or dj
         if someone then f.tabs.live.dot:Show() else f.tabs.live.dot:Hide() end
-        f.headLive:SetText(eb.live and ("ON AIR  ·  " .. (eb.listenerCount or 0) .. " listening") or (eb.tuned and "TUNED IN" or (dj and (string.upper(dj.name) .. " IS LIVE") or "")))
+        f.headLive:SetText(eb.live and ("ON AIR  Â·  " .. (eb.listenerCount or 0) .. " listening") or (eb.tuned and "TUNED IN" or (dj and (string.upper(dj.name) .. " IS LIVE") or "")))
     end
     if self.UpdateMiniWindow then self:UpdateMiniWindow() end
     if self.UpdateNowPage then self:UpdateNowPage() end
@@ -1458,11 +1521,11 @@ function R:UpdateLive()
         card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
         card.title:SetText(eb:RoomName())
         local status = eb:IsAnnouncing() and "Announcing track" or "On air"
-        card.sub:SetText(status .. (song and ("  ·  " .. song.title) or "") .. "  ·  " .. (eb.listenerCount or 0) .. " tuned in  ·  requests " .. (self.db.eb.open and "open" or "closed") .. (song and "" or "  ·  play a song to start"))
+        card.sub:SetText(status .. (song and ("  Â·  " .. song.title) or "") .. "  Â·  " .. (eb.listenerCount or 0) .. " tuned in  Â·  requests " .. (self.db.eb.open and "open" or "closed") .. (song and "" or "  Â·  play a song to start"))
     elseif eb.tuned then
         local d = eb.djs[eb.tuned]
         card.icon:SetVertexColor(C.acc2[1], C.acc2[2], C.acc2[3])
-        card.title:SetText((d and d.room or (eb.Short(eb.tuned) .. "'s Room")) .. (d and d.key ~= "" and ("  ·  " .. eb:TitleOf(d.key)) or ""))
+        card.title:SetText((d and d.room or (eb.Short(eb.tuned) .. "'s Room")) .. (d and d.key ~= "" and ("  Â·  " .. eb:TitleOf(d.key)) or ""))
         local j = eb:JoiningIn()
         card.sub:SetText(eb.missing and "|cffffb030You don't have this song. Get the latest GuildRadioFM from the DJ.|r"
             or (j and string.format("Scheduled start in %ds", math.ceil(j)))
@@ -1471,8 +1534,8 @@ function R:UpdateLive()
         dj = eb:FocusDJ() or dj
         card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
         local n = #eb:LiveSets()
-        card.title:SetText(n > 1 and (n .. " rooms open, pick one") or ((dj.room or dj.name) .. (dj.key ~= "" and ("  ·  " .. eb:TitleOf(dj.key)) or "")))
-        card.sub:SetText("Hosted by " .. dj.name .. "  ·  " .. (dj.count or 0) .. " tuned in. Tune in to hear it in sync.")
+        card.title:SetText(n > 1 and (n .. " rooms open, pick one") or ((dj.room or dj.name) .. (dj.key ~= "" and ("  Â·  " .. eb:TitleOf(dj.key)) or "")))
+        card.sub:SetText("Hosted by " .. dj.name .. "  Â·  " .. (dj.count or 0) .. " tuned in. Tune in to hear it in sync.")
     else
         card.icon:SetVertexColor(C.faint[1], C.faint[2], C.faint[3])
         card.title:SetText("No rooms open")
@@ -1485,7 +1548,7 @@ function R:UpdateLive()
         local d = sets[i]
         if d and not eb.live and #sets > 1 then
             pill.full = d.full
-            pill:SetLabel((d.room or d.name) .. "  ·  " .. (d.count or 0))
+            pill:SetLabel((d.room or d.name) .. "  Â·  " .. (d.count or 0))
             pill:SetWidth(pill.label:GetStringWidth() + 22)
             pill:SetOn(eb.tuned == d.full)
             pill:ClearAllPoints()
@@ -1642,13 +1705,13 @@ function R:FillInviteMenu()
                 r.everyone = true
                 r.label:SetText("Whole guild")
                 SetColor(r.label, C.acc)
-                r.meta:SetText(#mates .. " online  ·  posts in guild chat")
+                r.meta:SetText(#mates .. " online  Â·  posts in guild chat")
             else
                 r.full = it.full
                 local invited = eb.invited[it.name] and (eb.Now() - eb.invited[it.name] < 120)
                 r.label:SetText(it.name)
                 SetColor(r.label, invited and C.faint or C.text)
-                r.meta:SetText(invited and "invited" or (it.level .. "  ·  " .. it.zone .. (it.hasRadio and "  ·  has radio" or "")))
+                r.meta:SetText(invited and "invited" or (it.level .. "  Â·  " .. it.zone .. (it.hasRadio and "  Â·  has radio" or "")))
             end
             r:Show()
         else
@@ -1672,7 +1735,7 @@ function R:BuildSkinsPage(p)
     p.head:SetPoint("TOPLEFT", 0, -4)
     p.note = Text(p, 11, C.faint, BODY_FONT, "RIGHT")
     p.note:SetPoint("TOPRIGHT", 0, -4)
-    p.note:SetText("Hover to preview  ·  click to keep  ·  saved for this account")
+    p.note:SetText("Hover to preview  Â·  click to keep  Â·  saved for this account")
     p.current = Text(p, 12, C.text, BODY_FONT)
     p.current:SetPoint("LEFT", p.head, "RIGHT", 10, 0)
     p.cards = {}
@@ -1683,31 +1746,22 @@ function R:BuildSkinsPage(p)
         local b = CreateFrame("Button", nil, p)
         b:SetSize(cw, ch)
         b:SetPoint("TOPLEFT", col * (cw + gap), -22 - row * (ch + gap))
-        Fill(b, C.surface)
+        local material = b:CreateTexture(nil, "BACKGROUND")
+        material:SetAllPoints()
+        material:SetTexture(s.art.tile)
+        material:SetVertexColor(0.6,0.6,0.6,1)
         b.thumb = b:CreateTexture(nil, "ARTWORK")
-        b.thumb:SetPoint("TOPLEFT", 1, -1); b.thumb:SetPoint("TOPRIGHT", -1, -1); b.thumb:SetHeight(40)
+        b.thumb:SetPoint("TOPLEFT", 1, -1); b.thumb:SetPoint("TOPRIGHT", -1, -1); b.thumb:SetHeight(42)
         b.thumb:SetTexture(s.art.banner)
-        b.thumb:SetTexCoord(0.42, 1, 0, 0.64)   -- the art band above the tab ledge
+        b.thumb:SetTexCoord(0, 1, 0, 1)   -- the art band above the tab ledge
         b.crest = b:CreateTexture(nil, "OVERLAY")
-        b.crest:SetSize(34, 34)
-        b.crest:SetPoint("LEFT", b.thumb, "LEFT", 4, 0)
-        b.crest:SetTexture(s.art.crest)
+        b.emblemBinding = Renderer:BindEmblem(b, b.crest, "picker", s.key)
         b.name = Text(b, 12, C.text, TITLE_FONT)
-        b.name:SetPoint("BOTTOMLEFT", 8, 9)
-        b.name:SetText(i .. ". " .. s.name)
+        b.name:SetPoint("BOTTOMLEFT", 8, 8)
+        b.name:SetPoint("RIGHT", b, "RIGHT", -8, 0)
+        b.name:SetText(s.name)
         b.tag = Text(b, 10, C.acc, BODY_FONT, "RIGHT")
-        b.tag:SetPoint("BOTTOMRIGHT", -8, 10)
-        -- the skin's own colours, so a card reads correctly whatever skin is active
-        b.chips = {}
-        local sw = { s.tab, s.palette.acc, s.palette.live }
-        for k, c in ipairs(sw) do
-            local chip = b:CreateTexture(nil, "OVERLAY")
-            chip:SetTexture(WHITE)
-            chip:SetVertexColor(c[1], c[2], c[3], 1)
-            chip:SetSize(7, 7)
-            chip:SetPoint("TOPRIGHT", b.thumb, "TOPRIGHT", -4 - (k - 1) * 9, -4)
-            b.chips[k] = chip
-        end
+        b.tag:SetPoint("TOPLEFT", 7, -7)
         b.edge = Outline(b, C.line)
         b.key = s.key
         b.skin = s
@@ -1731,7 +1785,7 @@ function R:UpdateSkinsWindow()
     local p = self.mainFrame.pages.skins
     local saved = self.SkinByKey[self.db.skin] or self.SkinByKey[self.SKIN_DEFAULT]
     p.current:SetText(self.previewSkin and self.SkinByKey[self.previewSkin] and
-        ("Previewing " .. self.SkinByKey[self.previewSkin].name .. "  ·  yours: " .. saved.name) or saved.name)
+        ("Previewing " .. self.SkinByKey[self.previewSkin].name .. "  Â·  yours: " .. saved.name) or saved.name)
     for _, b in ipairs(p.cards) do
         local chosen = b.key == saved.key
         local looking = b.key == self.previewSkin
@@ -1806,13 +1860,20 @@ function R:ApplySkinArt()
         f.headShade:SetVertexColor(1, 1, 1, 1)
         -- banners carry their own emblem; a separate header mascot/crest is opt-in per skin
         if art.mascot then SetTex(f.mascot, art.mascot) else f.mascot:Hide() end
-        if s.headerCrest then SetTex(f.crestHead, art.crest, EMBLEM) else f.crestHead:Hide() end
+        f.crestHead:Hide()
+        Renderer:PaintEmblem(f.emblemBinding)
         f.logo:SetFont(s.font or LOGO_FONT, 26, "")
         local now = f.pages.now
-        SetTex(now.art.glow, art.crest, EMBLEM)
-        SetTex(now.art.tile, art.tile)
-        now.art.tile:SetVertexColor(1, 1, 1, 0.55)
-        now.art.halo:SetVertexColor(s.palette.acc[1], s.palette.acc[2], s.palette.acc[3], 1)
+        local hasEmblem = Renderer:PaintEmblem(now.art.emblem)
+        if hasEmblem then now.art:Show() else now.art:Hide() end
+        f.logo:ClearAllPoints()
+        f.logo:SetPoint("TOPLEFT", f, "TOPLEFT", f.emblemBinding.available and 62 or 14, -12)
+        local x = hasEmblem and 196 or 20
+        for _, entry in ipairs({{now.eyebrow,-14},{now.title,-32},{now.lyric,-81},{now.bar,-102}}) do
+            entry[1]:ClearAllPoints()
+            entry[1]:SetPoint("TOPLEFT", x, entry[2])
+            if entry[1] ~= now.eyebrow then entry[1]:SetPoint("RIGHT", now, "RIGHT", 0, 0) end
+        end
         SetTex(now.decor, art.decor)
         self:ApplyBackdrop()
         self:PaintTabs()
@@ -1821,9 +1882,17 @@ function R:ApplySkinArt()
     if m then
         SetTex(m.banner, art.banner)
         if art.banner then m.banner:SetTexCoord(0.42, 1, 0, 0.64) end
-        SetTex(m.icon, art.crest, EMBLEM)
+        local hasEmblem = Renderer:PaintEmblem(m.emblemBinding)
+        local x = hasEmblem and 50 or 12
+        m.eyebrow:ClearAllPoints()
+        m.eyebrow:SetPoint("TOPLEFT", x, -10)
+        m.eyebrow:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
+        m.title:ClearAllPoints()
+        m.title:SetPoint("TOPLEFT", x, -23)
+        m.title:SetPoint("RIGHT", m.prev, "LEFT", -6, 0)
     end
-    for _, card in ipairs(SKINNED.cards or {}) do SetTex(card.icon, art.crest, EMBLEM) end
+    for _, card in ipairs(SKINNED.cards or {}) do Renderer:PaintEmblem(card.emblemBinding) end
+    Renderer:Refresh()
 end
 
 -- recolour everything in place, then swap the artwork
@@ -1849,6 +1918,7 @@ function R:ApplySkin(quiet)
     end
     self:ApplySkinArt()
     if not quiet then self:RefreshAll() end
+    Renderer:Refresh()
 end
 
 -- ---------- Settings ----------
@@ -1924,7 +1994,7 @@ function R:BuildSettingsPage(p)
 
     p.credits = Text(p, 11, C.faint)
     p.credits:SetPoint("BOTTOMLEFT", 0, 0)
-    p.credits:SetText("GuildRadioFM by Nez  ·  live sets by Noyze Komplaynt  ·  v" .. tostring(R.version))
+    p.credits:SetText("GuildRadioFM by Nez  Â·  live sets by Noyze Komplaynt  Â·  v" .. tostring(R.version))
 end
 
 function R:UpdateSettingsWindow()
@@ -1965,6 +2035,7 @@ function R:CreateMiniWindow()
     Fill(m, C.bg)
     m.banner = m:CreateTexture(nil, "BACKGROUND", nil, 1)   -- skin banner scene, dimmed under the text
     m.banner:SetAllPoints()
+    Renderer:Bind(m, "mini", m.banner, "BACKGROUND", 1)
     m.dim = m:CreateTexture(nil, "BACKGROUND", nil, 2)
     m.dim:SetTexture(WHITE)
     m.dim:SetAllPoints()
@@ -1980,9 +2051,7 @@ function R:CreateMiniWindow()
     Outline(m, C.line)
     m.trim = Trim(m, 16, 3)
     m.icon = m:CreateTexture(nil, "ARTWORK", nil, 3)
-    m.icon:SetTexture(EMBLEM)
-    m.icon:SetSize(34, 34)
-    m.icon:SetPoint("LEFT", 9, 1)
+    m.emblemBinding = Renderer:BindEmblem(m, m.icon, "mini")
     m.play = IconButton(m, "play", 14, function() if R.db.isPlaying then R:Stop() else R:Play() end end, nil, 26)
     m.next = IconButton(m, "next", 12, function() R:Next() end, "Next", 24)
     m.prev = IconButton(m, "prev", 12, function() R:Back() end, "Previous", 24)
@@ -2003,6 +2072,10 @@ function R:CreateMiniWindow()
     m.barFill = Tex(m, "OVERLAY", C.acc)
     m.barFill:SetPoint("BOTTOMLEFT", 0, 0)
     m.barFill:SetHeight(2)
+    local miniProgress = CreateFrame("Frame", nil, m)
+    miniProgress:SetFrameLevel(m:GetFrameLevel())
+    miniProgress:SetAllPoints(m.barFill)
+    Renderer:Bind(miniProgress, "progressFill", m.barFill, "OVERLAY")
     m:SetScript("OnMouseUp", function(_, b) if b == "RightButton" then R:ToggleMainWindow() end end)
     -- grab it anywhere, buttons included; the close button only shows while the mouse is over the player
     for _, b in ipairs({ m.prev, m.play, m.next, m.close, m.open }) do DragThrough(b, m, function() return R.db.miniWindow end) end
@@ -2060,9 +2133,7 @@ local function Card(name, width)
     t.accent = Tex(t, "ARTWORK", C.acc)
     t.accent:SetPoint("TOPLEFT"); t.accent:SetPoint("BOTTOMLEFT"); t.accent:SetWidth(2)
     t.icon = t:CreateTexture(nil, "ARTWORK")
-    t.icon:SetTexture(R:GetActiveSkin().art.crest or EMBLEM)
-    t.icon:SetSize(32, 32)
-    t.icon:SetPoint("LEFT", 12, 0)
+    t.emblemBinding = Renderer:BindEmblem(t, t.icon, "popup")
     SKINNED.cards = SKINNED.cards or {}
     SKINNED.cards[#SKINNED.cards + 1] = t
     t.eyebrow = Text(t, 9, C.faint)

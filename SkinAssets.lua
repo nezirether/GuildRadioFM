@@ -1,0 +1,3 @@
+-- Generated production asset registrations belong here.
+-- The existing thirteen skins use their legacy artwork until validated assets
+-- are supplied through tools/build_skin_assets.py.

@@ -1,0 +1,67 @@
+{
+  "trogdor": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "alliance": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "horde": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "undercity": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "org": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "stormwind": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "thunderbluff": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "darnassus": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "ironforge": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "bloodmoon": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "sleek": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "classic": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  },
+  "retail": {
+    "emblem": {
+      "file": "emblem.png"
+    }
+  }
+}
