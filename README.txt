@@ -1,9 +1,12 @@
-GuildRadioFM v1.0.0
+GuildRadioFM 2.8.1-rc.2 (WoW Forever, Interface 16001)
 
-GuildRadioFM is a local-library-only World of Warcraft addon.
+GuildRadioFM plays local audio and coordinates guild rooms through addon
+messages. Install the GuildRadioFM folder in your Forever client's
+Interface/AddOns directory. Use the same candidate build on every client
+testing a room. See RECOVERY.md for installation caveats and validation.
 
 Put packaged music files here:
-World of Warcraft/_retail_/Interface/AddOns/GuildRadioFM/Songs/
+Interface/AddOns/GuildRadioFM/Songs/
 
 Then list them in SongList.lua with title, file, and optional duration entries.
 
@@ -17,7 +20,7 @@ Easy importer:
 Adding your own songs:
 1. Close WoW or return to the character screen.
 2. Copy MP3 files into:
-   World of Warcraft/_retail_/Interface/AddOns/GuildRadioFM/Songs/
+   Interface/AddOns/GuildRadioFM/Songs/
 3. Open SongList.lua in the GuildRadioFM folder.
 4. Add one line inside GuildRadioFMSongList for each song:
    { title = "My Song", file = "Interface\\AddOns\\GuildRadioFM\\Songs\\My Song.mp3" },
@@ -94,19 +97,31 @@ Playlist controls:
 - Play starts the selected playlist song.
 
 GuildRadioFM Live (2.3+)
-One window, five tabs: Now Playing, Library, Playlists, Live, Settings. /grfm opens it, /grfm mini for the mini player.
+One window, six tabs: Now Playing, Library, Playlists, Live, Skins, Settings. /grfm opens it, /grfm mini for the mini player.
 
 Live sets (Live tab or /grfm live):
 - Go live: you're the DJ. Everyone tuned in starts each song at the same moment as you. Nothing is streamed:
   every player runs the same shared clock (the server's, refined to frame precision) and the DJ schedules each
   song about a second ahead, so chat lag doesn't matter.
-- Tune in mid-song and you join at the next 30-second mark (Songs/_join holds those cuts), in time with everyone.
+- Tune in mid-song and you wait for the next song, then start in time with everyone. (Mid-song join copies were
+  removed to keep the addon small.)
 - Invite guild posts a line in guild chat and pops a "Tune in" card for guildmates who have 2.3.
 - Request Line: request a song from the Live tab or the request icon in Library; asking again counts as a vote.
   5 open requests each; waiting 3+ minutes goes first, then most votes, then oldest.
 - DJ: click a request to play it now, right-click to decline, shift-right-click to never play it this set.
   When a song ends, the top request plays next.
 - Commands: /grfm live, /grfm dj, /grfm invite, /grfm endset, /grfm tune, /grfm tuneout, /grfm unblock
-- Everyone needs the same GuildRadioFM folder. After adding songs run: python tools/make_joins.py
+- Everyone needs the same GuildRadioFM folder (same Songs and SongList.lua).
 
 Noyze Komplaynt pack: Songs/Noyze Komplaynt/ (Lost in the Music).
+
+Skins (2.8)
+- Skins tab or /grfm skins. Hover a card to preview it on the whole addon; click to keep it.
+  /grfm skin <name> also works (e.g. /grfm skin trogdor, /grfm skin thunder bluff).
+- 13 skins: Trogdor (signature), Alliance, Horde, Undercity, Org, Stormwind, Thunder Bluff, Darnassus,
+  Iron Forge, Blood Moon, Sleek, Classic (default), Retail.
+- Each skin covers the header banner, background texture, mini player, tabs, buttons, Now Playing crest
+  and flourish, and the Live DJ badge. Your choice is saved in GuildRadioFMDB for this account.
+- Settings > Background: "Skin" uses the skin's own texture; Kalimdor, Eastern Kingdoms and Plain still work.
+- Art lives in Media/Skins (uncompressed power-of-two TGA), cut from the GRFM concept sheet.
+  Rebuild with: python tools/make_skins.py, then python tools/import_concept.py

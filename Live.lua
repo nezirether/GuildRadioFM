@@ -3,8 +3,8 @@
 -- Nothing is streamed. Every player runs the same shared clock (the server's clock, refined to
 -- frame precision). The DJ schedules each song to start at an exact moment ~1 second ahead and
 -- tells the guild; every tuned-in player starts their own packaged copy at that same moment.
--- Someone who tunes in mid-song starts at the next join point (a pre-cut copy of the song that
--- begins 30, 60, 90... seconds in, see JoinPoints.lua), landing exactly in time with everyone.
+-- Mid-song joining is disabled to keep the addon package small. Late listeners wait
+-- for the next song; scheduled song starts remain synchronized across the room.
 --
 -- Several guildmates can be live at once; listeners pick a set. A DJ can pass the set to one of
 -- their listeners ("Pass host"): the queue moves with it and everyone tuned in follows the new host
@@ -19,10 +19,12 @@ local EB = { djs = {}, queue = {}, listeners = {}, listenerFull = {}, remoteBy =
 R.Live = EB
 
 local PREFIX = "GRFM_EB"
-local LEAD = 1.2          -- seconds between the DJ pressing play and everyone starting together
-local LATE_SLACK = 0.12   -- a listener this late still starts from the top (inaudible)
+local LEAD = 1.2          -- seconds between announcing the start and starting together
+local ANNOUNCE_TIMEOUT = 8
+local LATE_SLACK = 0.12   -- maximum tolerated delay before waiting for the next song
 local JOIN_PREP = 0.6     -- a join point needs at least this much notice
 local MAX_OPEN = 5
+local MAX_QUEUE_BYTES = 155
 EB.OVERDUE = 180
 local DJ_TIMEOUT = 95
 local HEARTBEAT = 30
@@ -38,7 +40,7 @@ local function Calibrate()
     local s = GetServerTime and GetServerTime()
     local t = GetTime()
     if not s then return end
-    if lastSec and s ~= lastSec and lastFrameTime then
+    if lastSec and s == lastSec + 1 and lastFrameTime and t - lastFrameTime <= 0.25 then
         local est = s - (t + lastFrameTime) / 2     -- the tick happened between the last frame and this one
         if not clockOffset or math.abs(est - clockOffset) > 1 then clockOffset = est
         else clockOffset = clockOffset * 0.8 + est * 0.2 end
@@ -49,24 +51,34 @@ EB.IsClockReady = function() return clockOffset ~= nil end
 local Now = EB.Now
 
 local function Short(name) return name and (string.match(name, "^([^-]+)") or name) or "?" end
-local function Me() return UnitName("player") end
+local function Me() return Short((GetUnitName and GetUnitName("player", true)) or UnitName("player")) end
 EB.Short = Short
 
-local function Send(msg, channel, target)
-    if channel == "GUILD" and not IsInGuild() then return end
-    if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        C_ChatInfo.SendAddonMessage(PREFIX, msg, channel, target)
-    elseif SendAddonMessage then
-        SendAddonMessage(PREFIX, msg, channel, target)
+local guildNames
+local function GuildSender(sender)
+    if not IsInGuild() or not GetNumGuildMembers or not GetGuildRosterInfo then return end
+    if not guildNames then
+        guildNames = {}
+        for i = 1, GetNumGuildMembers() or 0 do
+            local name = GetGuildRosterInfo(i)
+            if not (issecretvalue and issecretvalue(name)) and type(name) == "string" and name ~= "" then
+                guildNames[name:lower()] = name
+            end
+        end
+        if not next(guildNames) then guildNames = nil; return end
     end
+    return guildNames[sender:lower()]
+end
+
+local function Send(msg, channel, target, onSent, valid, prepare)
+    return R.Wire.Send(PREFIX, msg, channel, target, Now(), onSent, valid, prepare)
 end
 
 -- song <-> wire key: title, lowercased, minus the characters the protocol uses
 local function KeyOf(song)
     if not song then return nil end
-    local k = string.lower(song.title or song.file or "")
-    k = string.gsub(k, "[~:,|]", "")
-    return k
+    local title = tostring(song.title or song.file or ""):lower()
+    return (title:gsub("[~:,|%c]", "")):sub(1, 100)
 end
 EB.KeyOf = KeyOf
 
@@ -84,14 +96,15 @@ end
 local function Fmt(t) return string.format("%.3f", t) end
 
 -- every live DJ hosts a named room ("Healmode's Room" unless renamed)
-local function Clean(s) return (string.gsub(s or "", "[~|,:]", "")) end
+local function Clean(s) return (string.gsub(tostring(s or ""), "[~|,:%c]", "")) end
 function EB:RoomName()
-    local n = R.db.eb.roomName
+    local n = self.inheritedRoomName or R.db.eb.roomName
     if not n or n == "" then n = (UnitName("player") or "My") .. "'s Room" end
     return Clean(n)
 end
 function EB:SetRoomName(name)
     name = Clean(strtrim and strtrim(name or "") or name or "")
+    self.inheritedRoomName = nil
     R.db.eb.roomName = name ~= "" and string.sub(name, 1, 32) or nil
     if self.live then self:Heartbeat() end
 end
@@ -103,7 +116,11 @@ end
 
 -- ---------- join points ----------
 -- GuildRadioFMJoins[key] = { step = 30, points = { 30, 60, ... }, dir = "Interface\\AddOns\\...\\" }
+-- Mid-song join copies are retired (slim build): a late listener always waits for the next
+-- song. This stays off even if an old JoinPoints table or pack still lists cut files.
+EB.allowJoinPoints = false
 function EB:JoinPoint(key, position)
+    if not self.allowJoinPoints then return nil end
     local j = GuildRadioFMJoins and GuildRadioFMJoins[key]
     if not j then return nil end
     for _, p in ipairs(j.points) do
@@ -115,20 +132,28 @@ end
 -- R:Play() runs Nez's normal logic; PlayLocalTrack is caught and held until the scheduled moment.
 local schedule        -- { at = sharedTime, offset = seconds into the song, file = override }
 local pending         -- the held sound, fired from OnUpdate
+local changingWorld = false
+local audioBlocks = {}
+local audioTransition = 0
 local origPlay, origStop, origAdvance, origLocal = R.Play, R.Stop, R.AdvanceAfterTrackEnd, R.PlayLocalTrack
 
 function R:PlayLocalTrack(song)
     if schedule then
-        if self.soundHandle then StopSound(self.soundHandle); self.soundHandle = nil end
-        pending = { at = schedule.at + (schedule.offset or 0), song = song, file = schedule.file }
+        self:StopLocalTrack()
+        pending = { at = schedule.at and (schedule.at + (schedule.offset or 0)), song = song, file = schedule.file }
         return
     end
-    return origLocal(self, song)
+    if not changingWorld then return origLocal(self, song) end
 end
 
 local function FirePending()
     local p = pending
     pending = nil
+    if EB.tuned and Now() - p.at > LATE_SLACK then
+        origStop(R)
+        EB.waiting = true
+        return
+    end
     if p.file then
         local copy = {}
         for k, v in pairs(p.song) do copy[k] = v end
@@ -136,6 +161,14 @@ local function FirePending()
         origLocal(R, copy)
     else
         origLocal(R, p.song)
+    end
+    if not R.db.isPlaying then
+        if EB.tuned then
+            EB.missing, EB.waiting = EB.remoteKey, true
+        elseif EB.live then
+            EB.songStart = 0
+            Send("ST", "GUILD")
+        end
     end
 end
 
@@ -152,7 +185,11 @@ local function ScheduledPlay(index, startAt, offset, file)
 end
 
 function EB:JoiningIn()
-    return pending and math.max(0, pending.at - Now()) or nil
+    return pending and pending.at and math.max(0, pending.at - Now()) or nil
+end
+
+function EB:IsAnnouncing()
+    return pending and pending.deadline ~= nil
 end
 
 -- ---------- DJ side ----------
@@ -181,7 +218,8 @@ end
 function EB:HandleRequest(sender, key)
     if not self.live then return self:Reply(sender, "I'm not live right now.") end
     if not R.db.eb.open then return self:Reply(sender, "Requests are closed right now.") end
-    if not self:IndexOfKey(key) then return self:Reply(sender, "That song isn't in my library.") end
+    local _, song = self:IndexOfKey(key)
+    if not R:CanPlaySong(song) then return self:Reply(sender, "That song isn't available in my library.") end
     if R.db.eb.blocked[key] then return self:Reply(sender, "That one is on the do-not-play list.") end
     local who = Short(sender)
     for _, q in ipairs(self.queue) do
@@ -189,6 +227,10 @@ function EB:HandleRequest(sender, key)
             if q.by[who] then return self:Reply(sender, "You already asked for " .. self:TitleOf(key) .. ".") end
             q.by[who] = true
             q.votes = q.votes + 1
+            if #self:QueuePayload() > MAX_QUEUE_BYTES then
+                q.by[who], q.votes = nil, q.votes - 1
+                return self:Reply(sender, "The room's shared request list is full.")
+            end
             self:Reply(sender, "Vote added: " .. self:TitleOf(key) .. " (" .. q.votes .. ").")
             return self:BroadcastQueue()
         end
@@ -196,7 +238,12 @@ function EB:HandleRequest(sender, key)
     local mine = 0
     for _, q in ipairs(self.queue) do if q.owner == who then mine = mine + 1 end end
     if mine >= MAX_OPEN then return self:Reply(sender, "You have " .. MAX_OPEN .. " open requests. Wait for one to play.") end
-    self.queue[#self.queue + 1] = { key = key, owner = who, by = { [who] = true }, votes = 1, at = Now() }
+    local entry = { key = key, owner = who, by = { [who] = true }, votes = 1, at = Now() }
+    self.queue[#self.queue + 1] = entry
+    if #self:QueuePayload() > MAX_QUEUE_BYTES then
+        for i, current in ipairs(self.queue) do if current == entry then table.remove(self.queue, i); break end end
+        return self:Reply(sender, "The room's shared request list is full.")
+    end
     self:Reply(sender, "Requested: " .. self:TitleOf(key) .. ".")
     self:BroadcastQueue()
 end
@@ -210,13 +257,15 @@ end
 function EB:PlayTopRequest()
     self:SortQueue()
     while self.queue[1] do
-        local q = table.remove(self.queue, 1)
-        local index = self:IndexOfKey(q.key)
-        if index and not R.db.eb.blocked[q.key] then
+        local q = self.queue[1]
+        local index, song = self:IndexOfKey(q.key)
+        if R:CanPlaySong(song) and not R.db.eb.blocked[q.key] then
+            if not self.live then table.remove(self.queue, 1) end
             R:Print("Request from " .. q.owner .. ": " .. self:TitleOf(q.key))
             R:Play(index)
             return true
         end
+        table.remove(self.queue, 1)
     end
     self:BroadcastQueue()
     return false
@@ -232,12 +281,12 @@ function EB:Decline(key, block)
 end
 
 function EB:Heartbeat()
-    if not self.live then return end
+    if not self.live or self:IsAnnouncing() then return end
     local song = R.db.isPlaying and R:GetCurrentSong() or nil
     local count = 0
     local t = Now()
     for name, seen in pairs(self.listeners) do
-        if t - seen > DJ_TIMEOUT then self.listeners[name] = nil else count = count + 1 end
+        if t - seen > DJ_TIMEOUT then self.listeners[name], self.listenerFull[name] = nil, nil else count = count + 1 end
     end
     self.listenerCount = count
     Send("LV~" .. (song and KeyOf(song) or "") .. "~" .. Fmt(self.songStart or 0) .. "~" .. count .. "~" .. self:RoomName(), "GUILD")
@@ -247,12 +296,14 @@ function EB:GoLive()
     if not IsInGuild() then return R:Print("Join a guild to go live.") end
     if self.tuned then self:TuneOut(true) end
     self.live = true
+    self.inheritedRoomName = nil
     self.queue = {}
-    self.listeners = {}
+    self.listeners, self.listenerFull = {}, {}
     self.listenerCount = 0
     self:ClearChat()
     self:AddChat(nil, self:RoomName() .. " is open.", true)
-    if not R.db.isPlaying then self.songStart = 0 end
+    if R.db.isPlaying and R.startedAt then self.songStart = Now() - (GetTime() - R.startedAt)
+    else self.songStart = 0 end
     R:Print(self:RoomName() .. " is open. Invite guildmates from the Live tab.")
     self:Heartbeat()
     self:BroadcastQueue()
@@ -260,6 +311,10 @@ end
 
 function EB:EndSet()
     if not self.live then return end
+    if self:IsAnnouncing() then
+        pending.at, pending.deadline = Now(), nil
+        R.startedAt = GetTime()
+    end
     self.live = false
     Send("END", "GUILD")
     R:Print("Room closed.")
@@ -280,7 +335,7 @@ function EB:CurrentDJ()
     local best
     local t = Now()
     for name, d in pairs(self.djs) do
-        if t - d.seen > DJ_TIMEOUT then self.djs[name] = nil
+        if t - d.seen > DJ_TIMEOUT then self.djs[name], self.remoteBy[name] = nil, nil
         elseif not best or d.seen > best.seen then best = d end
     end
     return best
@@ -311,9 +366,14 @@ function EB:RemoteList()
     return r and r.list or {}
 end
 
-function EB:RemotePlay(key, songStart)
+function EB:RemotePlay(key, songStart, loading)
+    if not loading and self.remoteKey == key and self.remoteStart == songStart then return end
+    self.remoteKey, self.remoteStart = key, songStart
     local index, song = self:IndexOfKey(key)
-    if not index then
+    if not index or not R:CanPlaySong(song) then
+        pending = nil
+        origStop(R)
+        self.waiting = true
         self.missing = key
         R:Print("You don't have \"" .. key .. "\". Ask the DJ for the latest GuildRadioFM.")
         return Changed()
@@ -346,6 +406,8 @@ function EB:TuneIn(dj)
     origStop(R)
     if self.tuned ~= dj.full then self:ClearChat() end
     self.tuned = dj.full
+    self.remoteKey, self.remoteStart, self.missing = nil, nil, nil
+    R.db.eb.lastRoomHost = dj.full
     self:AddChat(nil, "You joined " .. (dj.room or (dj.name .. "'s Room")) .. ".", true)
     Send("TU", "WHISPER", dj.full)
     R:Print("Tuned in to " .. dj.name .. ".")
@@ -358,7 +420,11 @@ function EB:TuneOut(quiet)
     if not quiet then R:Print("Tuned out of " .. Short(self.tuned) .. ".") end
     self.tuned = nil
     self.waiting = false
+    self.remoteKey, self.remoteStart, self.missing = nil, nil, nil
+    R.db.eb.lastRoomHost = nil
     pending = nil
+    origStop(R)
+    self:ClearChat()
     Changed()
 end
 
@@ -375,14 +441,14 @@ function EB:Requested(key)
     for _, q in ipairs(list or {}) do if q.key == key then return true end end
 end
 
-function EB:QueuePayload(limit)
+function EB:QueuePayload()
     self:SortQueue()
-    local parts, len = {}, 0
+    local parts = {}
     for _, q in ipairs(self.queue) do
-        local item = q.key .. ":" .. q.votes .. ":" .. math.floor(q.at) .. ":" .. Short(q.owner)
-        if len + #item + 1 > (limit or 230) then break end
-        parts[#parts + 1] = item
-        len = len + #item + 1
+        local voters = {}
+        for name in pairs(q.by) do voters[#voters+1] = Clean(name):gsub("%^", "") end
+        table.sort(voters)
+        parts[#parts+1] = q.key .. ":" .. math.floor(q.at) .. ":" .. Clean(q.owner) .. ":" .. table.concat(voters, "^")
     end
     return (R.db.eb.open and "1" or "0") .. "~" .. table.concat(parts, ",")
 end
@@ -390,8 +456,16 @@ end
 function EB:ParseQueue(payload)
     local list = {}
     for item in string.gmatch(payload or "", "[^,]+") do
-        local key, votes, at, owner = string.match(item, "^(.-):(%d+):(%d+):(.*)$")
-        if key then list[#list + 1] = { key = key, votes = tonumber(votes), at = tonumber(at), owner = owner } end
+        local key, at, owner, voters = item:match("^(.-):(%d+):([^:]+):([^:]+)$")
+        if key and #key <= 100 then
+            local by, count = {}, 0
+            for name in voters:gmatch("[^^]+") do
+                if not by[name] then by[name], count = true, count + 1 end
+            end
+            if by[owner] then
+                list[#list+1] = {key=key, votes=count, at=tonumber(at), owner=owner, by=by}
+            end
+        end
     end
     return list
 end
@@ -408,7 +482,7 @@ function EB:OfferHost(name)
     if not self.live then return end
     local full = self.listenerFull[name]
     if not full or not self.listeners[name] then return R:Print(name .. " isn't tuned in.") end
-    self.offerTo = name
+    self.offerTo, self.offerFull = name, full
     self.offerAt = Now()
     Send("HOF", "WHISPER", full)
     R:Print("Asked " .. name .. " to host the room.")
@@ -416,43 +490,62 @@ function EB:OfferHost(name)
 end
 
 function EB:AnswerHandoff(yes)
-    if not self.tuned then return end
+    if not self.tuned or self.handoffFrom ~= self.tuned or Now() > (self.handoffUntil or 0) then return end
+    self.handoffAccepted = yes and self.tuned or nil
     Send(yes and "HAC" or "HDN", "WHISPER", self.tuned)
 end
 
 -- old host: send the queue to the new host, tell the guild, then keep listening to them
 function EB:CompleteHandoff(newFull)
-    local name = Short(newFull)
-    -- one message carries the new host and the queue, so they can't arrive out of order
-    Send("HO~" .. newFull .. "~" .. self:QueuePayload(200), "GUILD")
-    self.live = false
-    self.offerTo = nil
-    self.queue = {}
-    local d = { full = newFull, name = name, key = "", start = 0, count = 0, seen = Now() }
-    local song = R.db.isPlaying and R:GetCurrentSong()
-    if song then d.key, d.start = KeyOf(song), self.songStart or 0 end
-    self.djs[newFull] = d
-    self.tuned = newFull          -- the song already playing carries on; we now follow the new host
-    Send("TU", "WHISPER", newFull)
-    R:Print(name .. " is the host now. You're still tuned in.")
-    Changed()
+    if self:IsAnnouncing() then
+        self.offerTo, self.offerFull = nil, nil
+        return R:Print("Wait for the scheduled song before offering to pass the room again.")
+    end
+    local offeredAt = self.offerAt
+    local function valid()
+        return self.live and not self:IsAnnouncing() and self.offerFull == newFull and self.offerAt == offeredAt
+            and Now() - offeredAt <= 30
+    end
+    if not Send("HO~" .. newFull .. "~" .. self:QueuePayload(), "GUILD", nil, function()
+        local name = Short(newFull)
+        self.live = false
+        self.offerTo, self.offerFull = nil, nil
+        self.queue = {}
+        local d = { full = newFull, name = name, room = self:RoomName(), key = "", start = 0, count = 0, seen = Now() }
+        local song = R.db.isPlaying and R:GetCurrentSong()
+        if song then d.key, d.start = KeyOf(song), self.songStart or 0 end
+        self.djs[newFull] = d
+        self.tuned = newFull          -- the song already playing carries on; we now follow the new host
+        R.db.eb.lastRoomHost = newFull
+        self.remoteKey, self.remoteStart = d.key, d.start
+        Send("TU", "WHISPER", newFull)
+        R:Print(name .. " is the host now. You're still tuned in.")
+        Changed()
+    end, valid) then
+        R:Print("Host transfer could not be queued.")
+    end
 end
 
 -- everyone else: follow the set to its new host
 function EB:OnHandoff(oldFull, newFull, inherit)
     local old = self.djs[oldFull]
+    if not old or not GuildSender(newFull) or oldFull == newFull then return end
+    if Short(newFull) == Me() and (self.tuned ~= oldFull or self.handoffAccepted ~= oldFull or
+        Now() > (self.handoffUntil or 0)) then return end
     self.djs[oldFull] = nil
     self.remoteBy[oldFull] = nil
     if Short(newFull) == Me() then
-        if self.tuned ~= oldFull then return end
+        self.handoffAccepted = nil
+        R.db.eb.lastRoomHost = nil
         self.tuned = nil
         self.live = true
+        self.inheritedRoomName = old.room
         self.listeners, self.listenerFull, self.listenerCount = {}, {}, 0
         self.queue = {}
         if inherit then
             R.db.eb.open = inherit.open
             for _, q in ipairs(inherit.list) do
-                self.queue[#self.queue + 1] = { key = q.key, owner = q.owner, by = { [q.owner] = true }, votes = q.votes, at = q.at }
+                self.queue[#self.queue + 1] = { key = q.key, owner = q.owner, by = q.by or { [q.owner] = true }, votes = q.votes, at = q.at }
             end
         end
         self.songStart = old and old.start or 0
@@ -463,10 +556,12 @@ function EB:OnHandoff(oldFull, newFull, inherit)
     else
         local d = self.djs[newFull] or { full = newFull, name = Short(newFull) }
         d.seen = Now()
-        if old then d.key, d.start, d.count = old.key, old.start, old.count end
+        d.key, d.start, d.count, d.room = old.key, old.start, old.count, old.room
         self.djs[newFull] = d
         if self.tuned == oldFull then
             self.tuned = newFull
+            R.db.eb.lastRoomHost = newFull
+            self.remoteKey, self.remoteStart = d.key, d.start
             Send("TU", "WHISPER", newFull)
             R:Print(Short(newFull) .. " is hosting now. Still in sync.")
         end
@@ -550,15 +645,34 @@ function EB:ColorName(name)
     return "|cffffd200" .. name .. "|r"
 end
 
+local function ChatText(text)
+    text = tostring(text or ""):gsub("[|~%c]", ""):match("^%s*(.-)%s*$")
+    return text:sub(1, 145)
+end
+
+function EB:RelayChat(name, text)
+    local message = "CR~" .. Clean(name):sub(1, 60) .. "~" .. text
+    local now = Now()
+    for listener, seen in pairs(self.listeners) do
+        local target = self.listenerFull[listener]
+        if target and now - seen <= DJ_TIMEOUT and GuildSender(target) then
+            Send(message, "WHISPER", target)
+        end
+    end
+    self:AddChat(name, text)
+end
+
 function EB:SendChat(text)
-    text = string.gsub(text or "", "|", "")
-    text = strtrim and strtrim(text) or text
+    text = ChatText(text)
     if text == "" then return end
-    local host = self:RoomHost()
-    if not host then return R:Print("Open a room or tune into one to chat.") end
-    text = string.sub(text, 1, 200)
-    Send("CH~" .. host .. "~" .. text, "GUILD")
-    self:AddChat(Me(), text)
+    if not self.live and not self.tuned then return R:Print("Open a room or tune into one to chat.") end
+    if (self.nextChatAt or 0) > Now() then return end
+    self.nextChatAt = Now() + 1
+    if self.live then
+        self:RelayChat(Me(), text)
+    else
+        Send("CH~" .. text, "WHISPER", self.tuned)
+    end
 end
 
 -- ---------- wire ----------
@@ -568,16 +682,55 @@ local function Split(msg)
     return out
 end
 
-function EB:OnMessage(msg, channel, sender)
-    if Short(sender) == Me() then return end
-    self.peers[Short(sender)] = true
-    local chatHost, chatText = string.match(msg, "^CH~([^~]*)~(.*)$")
-    if chatHost then
-        if chatHost == self:RoomHost() then self:AddChat(Short(sender), chatText) end
+local guildOps = {NP=true, LV=true, ST=true, END=true, HO=true, WHO=true, HI=true, QS=true}
+local whisperOps = {TU=true, TO=true, HOF=true, HAC=true, HDN=true, RQ=true, RR=true, ME=true, CH=true, CR=true}
+local playbackOps = {NP=true, LV=true, ST=true, END=true, HO=true}
+
+function EB:OnMessage(packet, channel, sender)
+    if not R.db or (issecretvalue and (issecretvalue(sender) or issecretvalue(packet) or issecretvalue(channel))) then return end
+    if type(sender) ~= "string" or not (channel == "GUILD" or channel == "WHISPER") then return end
+    sender = GuildSender(sender)
+    if not sender or Short(sender) == Me() then return end
+    local msg, epoch, sequence = R.Wire.Decode(packet, Now())
+    if not msg then
+        if not self.warnedLegacy and type(packet) == "string" and packet:match("^LV~") then
+            self.warnedLegacy = true
+            R:Print("A guildmate uses an older room protocol. Both clients need this recovery build.")
+        end
         return
     end
     local f = Split(msg)
     local op = f[1]
+    if op ~= "INV" and not ((channel == "GUILD" and guildOps[op]) or
+        (channel == "WHISPER" and whisperOps[op])) then return end
+    if op == "NP" or op == "LV" then
+        if #f < 3 then return end
+        local stamp = tonumber(f[3])
+        if not stamp or stamp ~= stamp or stamp < 0 or stamp > Now() + 30 or #f[2] > 100 then return end
+        if op == "NP" and (f[2] == "" or stamp == 0) then return end
+    end
+    if op == "RQ" and (#f ~= 2 or f[2] == "" or #f[2] > 100 or Clean(f[2]) ~= f[2]) then return end
+    if op == "HO" and (#f ~= 4 or not self.djs[sender] or not GuildSender(f[2]) or
+        (f[3] ~= "0" and f[3] ~= "1")) then return end
+    if not R.Wire.Accept(sender, channel, playbackOps[op] and "playback" or op, epoch, sequence) then return end
+    self.peers[Short(sender)] = true
+    if op == "CH" then
+        local name, text = Short(sender), ChatText(f[2])
+        if not self.live or text == "" or self.listenerFull[name] ~= sender or
+            not self.listeners[name] or Now() - self.listeners[name] > DJ_TIMEOUT then return end
+        self.chatRate = self.chatRate or {}
+        if Now() < (self.chatRate[sender] or 0) then return end
+        self.chatRate[sender] = Now() + 1
+        self:RelayChat(name, text)
+        return
+    end
+    if op == "CR" then
+        local text = ChatText(f[3])
+        if self.tuned == sender and text ~= "" and f[2] and f[2] ~= "" then
+            self:AddChat(Clean(f[2]):sub(1, 60), text)
+        end
+        return
+    end
     if op == "NP" or op == "LV" then
         local d = self.djs[sender] or { full = sender, name = Short(sender) }
         d.room = d.room or (Short(sender) .. "'s Room")
@@ -590,8 +743,18 @@ function EB:OnMessage(msg, channel, sender)
         else
             d.key, d.start, d.count = f[2] or "", tonumber(f[3]) or 0, tonumber(f[4]) or 0
             if f[5] and f[5] ~= "" then d.room = f[5] end
-            if self.tuned == sender then Send("TU", "WHISPER", sender) end
+            if self.tuned == sender then
+                Send("TU", "WHISPER", sender)
+                if d.key ~= "" and d.start > 0 then self:RemotePlay(d.key, d.start)
+                else
+                    if pending or R.db.isPlaying then origStop(R) end
+                    pending = nil
+                    self.remoteKey, self.remoteStart, self.missing = nil, nil, nil
+                    self.waiting = true
+                end
+            end
         end
+        if not self.live and not self.tuned and R.db.eb.lastRoomHost == sender then self:TuneIn(d) end
         if isNew and not self.tuned and not self.live and not self.handingOff then R:Print(d.name .. " opened " .. d.room .. " on GuildRadioFM. /grfm tune to listen.") end
         Changed()
     elseif op == "INV" then
@@ -600,15 +763,20 @@ function EB:OnMessage(msg, channel, sender)
     elseif op == "ST" then
         local d = self.djs[sender]
         if d then d.key = ""; d.start = 0 end
-        if self.tuned == sender then pending = nil; origStop(R); self.waiting = true end
+        if self.tuned == sender then
+            pending = nil
+            self.remoteKey, self.remoteStart, self.missing = nil, nil, nil
+            origStop(R)
+            self.waiting = true
+        end
         Changed()
     elseif op == "END" then
         self.djs[sender] = nil
         if self.tuned == sender then
             R:Print(Short(sender) .. " closed the room.")
-            self.tuned = nil
-            self.waiting = false
+            self:TuneOut(true)
         end
+        self.remoteBy[sender] = nil
         Changed()
     elseif op == "WHO" then
         Send("ME", "WHISPER", sender)
@@ -625,15 +793,24 @@ function EB:OnMessage(msg, channel, sender)
             self.listeners[Short(sender)] = Now(); self.listenerFull[Short(sender)] = sender
         end
     elseif op == "TO" then
-        if self.live and self.listeners[Short(sender)] then self:AddChat(nil, Short(sender) .. " left.", true) end
-        self.listeners[Short(sender)] = nil
+        local name = Short(sender)
+        if not self.live or self.listenerFull[name] ~= sender then return end
+        self:AddChat(nil, name .. " left.", true)
+        self.listeners[name], self.listenerFull[name] = nil, nil
     elseif op == "HOF" then
         -- our DJ wants to hand us the set
-        if self.tuned == sender and R.ShowHandoff then R:ShowHandoff(Short(sender)) end
+        if self.tuned == sender then
+            self.handoffFrom, self.handoffUntil, self.handoffAccepted = sender, Now()+30, nil
+            if R.ShowHandoff then R:ShowHandoff(Short(sender)) end
+        end
     elseif op == "HAC" then
-        if self.live and self.offerTo == Short(sender) then self:CompleteHandoff(sender) end
+        if self.live and self.offerFull == sender and Now() - (self.offerAt or 0) <= 30 then self:CompleteHandoff(sender) end
     elseif op == "HDN" then
-        if self.offerTo == Short(sender) then self.offerTo = nil; R:Print(Short(sender) .. " passed on hosting.") ; Changed() end
+        if self.offerFull == sender then
+            self.offerTo, self.offerFull = nil, nil
+            R:Print(Short(sender) .. " passed on hosting.")
+            Changed()
+        end
     elseif op == "HO" then
         self:OnHandoff(sender, f[2] or "", { open = f[3] == "1", list = self:ParseQueue(f[4]) })
     elseif op == "RQ" then
@@ -642,7 +819,8 @@ function EB:OnMessage(msg, channel, sender)
         R:Print(Short(sender) .. ": " .. (f[2] or ""))
     elseif op == "QS" then
         local d = self.djs[sender]
-        if d then d.seen = Now() end
+        if not d then return end
+        d.seen = Now()
         self.remoteBy[sender] = { open = f[2] == "1", list = self:ParseQueue(f[3]) }
         self.remote = self.remoteBy[sender]
         Changed()
@@ -654,19 +832,36 @@ function R:Play(index)
     if EB.remotePlaying then return origPlay(self, index) end
     if EB.tuned then EB:TuneOut() end
     if EB.live then
-        local startAt = Now() + LEAD
-        schedule = { at = startAt, offset = 0 }
+        pending = nil
+        schedule = {}
         origPlay(self, index)
         schedule = nil
-        if self.db.isPlaying then
-            self.startedAt = GetTime() + LEAD
-            self.durationAdvanceStartedAt = nil
-            local song = self:GetCurrentSong()
-            EB.songStart = startAt
-            EB:DropFromQueue(KeyOf(song))
-            Send("NP~" .. KeyOf(song) .. "~" .. Fmt(startAt), "GUILD")
-            EB:BroadcastQueue()
+        if not pending then
+            EB.songStart = 0
+            Send("ST", "GUILD")
+            return
         end
+
+        local track = pending
+        track.deadline = Now() + ANNOUNCE_TIMEOUT
+        local key = KeyOf(track.song)
+        local body = "NP~" .. key .. "~"
+        local startAt
+        local queued = Send(body, "GUILD", nil, function()
+            track.at, track.deadline = startAt, nil
+            EB.songStart = startAt
+            self.startedAt = GetTime() + math.max(0, startAt - Now())
+            self.durationAdvanceStartedAt = nil
+            EB:DropFromQueue(key)
+            EB:BroadcastQueue()
+        end, function()
+            return EB.live and pending == track and track.deadline and Now() < track.deadline
+        end, function()
+            startAt = Now() + LEAD
+            return body .. Fmt(startAt)
+        end)
+        if not queued then track.deadline = Now() end
+        Changed()
         return
     end
     pending = nil
@@ -686,6 +881,7 @@ function R:AdvanceAfterTrackEnd()
         self.soundHandle = nil
         self.db.isPlaying = false
         self.startedAt = nil
+        EB.waiting = true
         self:RefreshAll()
         return
     end
@@ -700,49 +896,80 @@ end
 -- the song-end timer must not fire while a held song hasn't started yet
 local origTick = R.HandlePlaybackTick
 function R:HandlePlaybackTick()
-    if pending then return end
+    if pending or changingWorld then return end
     return origTick(self)
 end
 
 -- ---------- loading screens ----------
--- WoW cuts every sound on a loading screen (entering or leaving an instance). Afterwards, pick the song
--- back up where it would be now: in a room, rejoin the DJ in sync; alone, start the next 30-second join
--- cut of the same song (or restart it if it has none), so the timer and the music still line up.
+-- Own the sound handle across transitions. A zone change can leave a sound
+-- playing, so stop it explicitly before recovering playback.
 function EB:ResumeAfterLoading()
-    if not R.db or not R.db.isPlaying or not R.startedAt then return end
+    if not R.db then return end
     if self.tuned then
         local d = self.djs[self.tuned]
-        if d and d.key ~= "" and (d.start or 0) > 0 then self:RemotePlay(d.key, d.start) end
+        if d and d.key ~= "" and (d.start or 0) > 0 then self:RemotePlay(d.key, d.start, true) end
         return
     end
-    local song, index = R:GetCurrentSong()
+    if not R.db.isPlaying or not R.startedAt then return end
+    local song = R:GetCurrentSong()
     if not song then return end
-    local songStart = Now() - (GetTime() - R.startedAt)
-    local position = Now() - songStart
-    local duration = tonumber(song.duration) or 0
-    if duration > 0 and position >= duration - 2 then return end   -- it was ending anyway; the song-end timer moves on
-    local point, file = self:JoinPoint(KeyOf(song), position)
-    if point and (duration == 0 or point < duration - 5) then
-        ScheduledPlay(index, songStart, point, file)
-        if self.live then self.songStart = songStart end
-        R:Print("Back from the loading screen: " .. (song.title or "the song") .. " picks up in " .. math.ceil(songStart + point - Now()) .. "s.")
-    else
-        local live = self.live
-        self.live = false            -- restart quietly; listeners' copies were never interrupted
-        ScheduledPlay(index, Now() + 0.2, 0)
-        self.live = live
-        if live then self.songStart = Now() + 0.2 end
+    if self.live then
+        if pending and pending.at and pending.at < Now() - LATE_SLACK then pending = nil end
+        if not pending then R:Print("The live timeline will continue at the next song.") end
+        return
     end
+    local duration = tonumber(song.duration) or 0
+    if duration > 0 and GetTime() - R.startedAt >= duration - 2 then return end
+    ScheduledPlay(nil, Now() + 0.2, 0)
+end
+
+local function SuspendAudio()
+    audioTransition = audioTransition + 1
+    changingWorld = true
+    R:StopLocalTrack()
+end
+
+local function RecoverAudio()
+    if not changingWorld or next(audioBlocks) then return end
+    local transition = audioTransition
+    R.After(0.5, function()
+        if not changingWorld or audioTransition ~= transition then return end
+        changingWorld = false
+        EB:ResumeAfterLoading()
+    end)
 end
 
 -- ---------- events ----------
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+ev:RegisterEvent("PLAYER_LEAVING_WORLD")
+ev:RegisterEvent("LOADING_SCREEN_ENABLED")
+ev:RegisterEvent("LOADING_SCREEN_DISABLED")
+for _, event in ipairs({"CINEMATIC_START", "CINEMATIC_STOP", "PLAY_MOVIE", "STOP_MOVIE"}) do
+    pcall(ev.RegisterEvent, ev, event)
+end
 ev:RegisterEvent("CHAT_MSG_ADDON")
 ev:RegisterEvent("PLAYER_LOGOUT")
+ev:RegisterEvent("GUILD_ROSTER_UPDATE")
+ev:RegisterEvent("PLAYER_GUILD_UPDATE")
 ev:SetScript("OnEvent", function(_, event, prefix, msg, channel, sender)
-    if event == "PLAYER_LOGIN" then
+    if not R.db then return end
+    if event == "GUILD_ROSTER_UPDATE" then
+        guildNames = nil
+    elseif event == "PLAYER_GUILD_UPDATE" then
+        guildNames = nil
+        local guild = IsInGuild() and GetGuildInfo and GetGuildInfo("player") or nil
+        if EB.guild ~= guild then
+            EB.guild = guild
+            EB.djs, EB.remoteBy, EB.listeners, EB.listenerFull = {}, {}, {}, {}
+            EB.live, EB.offerTo, EB.offerFull = false, nil, nil
+            if EB.tuned then EB:TuneOut(true) end
+            R.db.eb.lastRoomHost = nil
+            R.Wire.Clear()
+        end
+    elseif event == "PLAYER_LOGIN" then
+        EB.guild = IsInGuild() and GetGuildInfo and GetGuildInfo("player") or nil
         if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
             C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
         elseif RegisterAddonMessagePrefix then
@@ -750,13 +977,30 @@ ev:SetScript("OnEvent", function(_, event, prefix, msg, channel, sender)
         end
         R.db.eb = R.db.eb or { open = true, blocked = {} }
         R.db.eb.blocked = R.db.eb.blocked or {}
-        C_Timer.After(5, function() Send("HI", "GUILD") end)
+        if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
+        R.After(5, function() Send("HI", "GUILD") end)
+    elseif event == "LOADING_SCREEN_ENABLED" then
+        audioBlocks.loading = true
+        SuspendAudio()
+    elseif event == "PLAYER_LEAVING_WORLD" then
+        SuspendAudio()
+    elseif event == "LOADING_SCREEN_DISABLED" then
+        audioBlocks.loading = nil
+        RecoverAudio()
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- prefix = isInitialLogin, msg = isReloadingUi; only a real loading screen mid-session cut the sound
-        if not prefix and not msg then C_Timer.After(0.5, function() EB:ResumeAfterLoading() end) end
+        RecoverAudio()
+    elseif event == "CINEMATIC_START" or event == "PLAY_MOVIE" then
+        audioBlocks[event] = true
+        SuspendAudio()
+    elseif event == "CINEMATIC_STOP" or event == "STOP_MOVIE" then
+        local startEvent = event == "CINEMATIC_STOP" and "CINEMATIC_START" or "PLAY_MOVIE"
+        audioBlocks[startEvent] = nil
+        RecoverAudio()
     elseif event == "CHAT_MSG_ADDON" then
         if prefix == PREFIX and msg and sender then EB:OnMessage(msg, channel, sender) end
     elseif event == "PLAYER_LOGOUT" then
+        pending = nil
+        SuspendAudio()
         if EB.live then Send("END", "GUILD") end
         if EB.tuned then Send("TO", "WHISPER", EB.tuned) end
     end
@@ -764,8 +1008,14 @@ end)
 
 local beat = 0
 ev:SetScript("OnUpdate", function(_, elapsed)
+    if not R.db then return end
     Calibrate()
-    if pending and Now() >= pending.at then FirePending(); Changed() end
+    R.Wire.Flush()
+    if pending and pending.deadline and Now() >= pending.deadline then
+        R:Stop()
+        R:Print("The room could not announce the song. Try playing it again.")
+    end
+    if not changingWorld and pending and pending.at and Now() >= pending.at then FirePending(); Changed() end
     beat = beat + elapsed
     if beat < HEARTBEAT then return end
     beat = 0
@@ -773,12 +1023,14 @@ ev:SetScript("OnUpdate", function(_, elapsed)
     if EB.live then EB:BroadcastQueue() end
     if EB.offerTo and Now() - (EB.offerAt or 0) > 30 then
         R:Print(EB.offerTo .. " didn't answer. You're still the host.")
-        EB.offerTo = nil
-    end
-    if EB.tuned and not EB.djs[EB.tuned] then
-        R:Print("Lost the DJ. Tuned out.")
-        EB.tuned = nil
+        EB.offerTo, EB.offerFull = nil, nil
     end
     EB:CurrentDJ()
+    if EB.tuned and not EB.djs[EB.tuned] then
+        R:Print("Lost the DJ. Waiting for that room to return.")
+        local host = EB.tuned
+        EB:TuneOut(true)
+        R.db.eb.lastRoomHost = host
+    end
     Changed()
 end)

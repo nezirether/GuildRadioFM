@@ -1,16 +1,15 @@
--- Compatibility layer for legacy WoW clients. Experimental; verify against Forever client.
-if not C_Timer then C_Timer = {} end
-if not C_Timer.After then
-    function C_Timer.After(delay, callback)
-        if type(callback) ~= "function" then return end
-        local elapsed = 0
-        local frame = CreateFrame("Frame")
-        frame:SetScript("OnUpdate", function(self, dt)
-            elapsed = elapsed + dt
-            if elapsed >= (tonumber(delay) or 0) then
-                self:SetScript("OnUpdate", nil)
-                callback()
-            end
-        end)
-    end
+-- Keep fallback timers inside the addon.
+GuildRadioFM = GuildRadioFM or {}
+
+function GuildRadioFM.After(delay, callback)
+    if C_Timer and C_Timer.After then return C_Timer.After(delay, callback) end
+    local elapsed = 0
+    local frame = CreateFrame("Frame")
+    frame:SetScript("OnUpdate", function(self, delta)
+        elapsed = elapsed + delta
+        if elapsed >= delay then
+            self:SetScript("OnUpdate", nil)
+            callback()
+        end
+    end)
 end

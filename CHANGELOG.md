@@ -1,5 +1,71 @@
 GuildRadioFM Changelog
 
+## 2.8.1-rc.2
+
+- Compute room start timestamps on transport attempts and arm playback after successful submission. Superseded announcements expire without starting stale tracks.
+- Retain Request Line entries when a play announcement times out. Keep the room's display name across moderated host transfer without changing the recipient's personal room name.
+- Wait for overlapping loading and cinematic events before recovering local playback. Room listeners wait for the next scheduled boundary after missing a start.
+- Search title, artist, album and pack in the library and playlist picker. Keep locked tracks out of the picker and reject malformed pack headers.
+- Reorder the local queue with /grfm movequeue <from> <to>. Show explicit announcement, countdown and waiting states in the player and room UI.
+- Extend Lua 5.1 simulations for delayed submission, request retention, host transfer, audio recovery and library controls.
+
+
+## 2.8.1-rc.1
+
+- Stop GuildRadioFM's active sound when leaving the world, opening a loading screen, or tearing down the UI for /reload.
+- Suspend scheduled starts and duration advancement during world transitions. Coalesce world and loading-screen completion events, and restart a solo selection at most once while keeping its playlist or favorites context.
+- Stop an active handle before duration-based advancement. An MP3 that runs longer than its library entry can no longer overlap the next track through this path.
+- Keep a live room's timeline during a loading screen. Hosts and listeners who miss the start wait for the next scheduled song.
+- Ignore server-clock samples across long frames. Surface local audio failures as unavailable tracks and clear the missing-track status when the host stops.
+- Validate request and handoff fields before accepting their sequence, and require the matching listener identity for leave messages.
+- Retain the safe RC2 tooltip callback logic and expand its regression cases with the skin module loaded.
+- Add headless coverage for asymmetric latency, local file errors, reload cleanup and overlapping-audio regressions. See the test report for Forever checks still pending.
+
+## 2.8.0-rc.2 - mini player
+
+- Mini player: Previous button immediately left of Play/Stop (same Back action as the main window).
+  It is a standard skinned icon button, so it follows every skin's colours and hover, and it drags the
+  mini player like the other buttons.
+- Mini player: slightly stronger dimming on the right so the controls stay readable over busy banners.
+- No changes to skins' textures, audio, Live DJ rooms or saved settings.
+
+## 2.8.0-rc.1 - skins
+
+- New Skins tab with 13 skins: Trogdor (signature), Alliance, Horde, Undercity, Org, Stormwind,
+  Thunder Bluff, Darnassus, Iron Forge, Blood Moon, Sleek, Classic (default) and Retail.
+- Each skin has its own header banner, tiled background, crest and Now Playing flourish, plus tints for
+  the shared forged frame corners, tab plates, button bevels, play disc and Live DJ badge (Media/Skins/Kit.tga).
+- Skin art (banners, backgrounds, Now Playing flourishes and most crests) is cut from the owner's GRFM skin
+  concept sheet by tools/import_concept.py. Faction emblems in the Alliance, Horde and Stormwind strips are
+  covered with the skin's own crest. Banner art sits above the tab row so it is never hidden behind tabs.
+- Trogdor signature skin: the concept's fire-breathing dragon banner, lava-stone background, dragon-head crest,
+  flame flourish, charred-iron and bronze trim.
+- Hover a skin card for a live preview of the whole addon; click to keep it. /grfm skins, /grfm skin <name>.
+  The choice is saved in GuildRadioFMDB.skin; an unknown saved skin is left untouched and Classic is shown.
+- Live DJ badge (forged pill + microphone) in the header tab row and on the Now Playing crest.
+- Mini player shows the skin banner, crest and trim. Pop-up cards use the skin crest.
+- Settings > Background "Forge" is now "Skin" (same saved key), so existing choices carry over.
+- Join points are disabled in code as well as data: late listeners always wait for the next song.
+- Removed unused GuildRadioFM_Forge.tga, GuildRadioFM_ForgeHeader.tga and GuildRadioFM_Icon.png.
+- Added tests/ (headless Lua 5.1 suite) and tools/make_skins.py, tools/preview_skins.py.
+- In-game testing remains required.
+
+## 2.7.0-rc.3 - slim audio rollback (UI work baseline)
+
+- Remove offset audio join points; late listeners now wait for the next song.
+- Preserve the existing functioning Live DJ Rooms, standard synchronized song starts, and all original packaged audio.
+- No additional audio segments or generator are included.
+- In-game testing remains required.
+
+## 2.7.0-rc.1
+
+- Fix playlist rename and unavailable-control tooltip errors.
+- Add a versioned room protocol with throttling, scoping and replay checks.
+- Restore the solo queue, pack lyrics and Secret Frequency unlocks.
+- Preserve existing user data during schema migration and restyle the player
+  with original TGA textures.
+- See RECOVERY.md for test coverage, compatibility and live verification.
+
 v2.4.2 - GuildRadioFM Live
 
 Live sets (Live tab, /grfm live):
