@@ -26,7 +26,7 @@ python tests/test_skin_pipeline.py
 
 Four Lua 5.1 suites passed, compiling fifteen TOC modules and four suites. The UI test exercises all thirteen skin registrations and six screens, main and mini players, scales and long titles. Signature-specific checks cover intended layout anchors, viewport-fit scaling, queue scrolling, reorder/removal, player-screen visibility and footer play/stop through the existing callbacks.
 
-Four Python pipeline tests passed. The original Trogdor emblem's pixels and alpha match the source. Candidate package checks compare protected engine files and original music against the frozen RC2 package.
+Five Python pipeline tests passed, including registered texture path and dimension checks for all thirteen skins. The original Trogdor emblem's pixels and alpha match the source. Candidate package checks compare protected engine files and original music against the frozen RC2 package.
 
 ## Visual acceptance pending
 
