@@ -82,8 +82,8 @@ r:RefreshAll()
 assert(r.db.skin=="retail")
 r:SetSkin("trogdor")
 local f=r.mainFrame
-assert(r.miniFrame:GetHeight()==76 and r.miniFrame.title.fontSize==18)
-assert(r.miniFrame.eyebrow.fontSize==12 and r.miniFrame.play:GetWidth()==36)
+assert(r.miniFrame:GetHeight()==86 and r.miniFrame.title.fontSize==20)
+assert(r.miniFrame.eyebrow.fontSize==14 and r.miniFrame.play:GetWidth()==36)
 for _,binding in ipairs(r.SkinRenderer.surfaces) do
     if binding.frame==r.miniFrame then assert(binding.role~="outer") end
 end
@@ -107,6 +107,17 @@ f.footer.play.scripts.OnClick(f.footer.play,"LeftButton")
 assert(r.db.isPlaying)
 f.footer.play.scripts.OnClick(f.footer.play,"LeftButton")
 assert(not r.db.isPlaying)
+r:ShowTab("settings")
+local settings=f.pages.settings
+assert(#settings.settingRows==10)
+for _,row in ipairs(settings.settingRows) do
+    assert(row:GetHeight()==70 and row.label.fontSize==18 and row.description.fontSize==14)
+    assert(row.toggle:GetWidth()==76 and row.toggle:GetHeight()==32)
+end
+settings.scroll(-3)
+assert(settings.scrollOffset>0)
+settings.scroll(100)
+assert(settings.scrollOffset==0)
 r:ShowTab("library")
 assert(not queue:IsShown())
 r:ShowTab("now")
