@@ -14,6 +14,19 @@ spec.loader.exec_module(builder)
 
 
 class SkinPipelineTests(unittest.TestCase):
+    def test_supplied_native_logo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / 'output'
+            builder.compile_assets({'trogdor': {'emblem': {'file': 'emblem.png', 'native': True}}},
+                                   ROOT / 'assets', output)
+            with Image.open(ROOT / 'assets/trogdor/emblem.png') as original:
+                with Image.open(output / 'Media/Skins/trogdor/emblem.tga') as exported:
+                    self.assertEqual(original.size, (256, 256))
+                    self.assertEqual(original.tobytes(), exported.tobytes())
+            with self.assertRaises(ValueError):
+                builder.compile_assets({'trogdor': {'emblem': {'file': 'emblem.png'}}},
+                                       ROOT / 'assets', Path(folder) / 'unmarked-output')
+
     def test_emblem_alpha_and_bounds(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)

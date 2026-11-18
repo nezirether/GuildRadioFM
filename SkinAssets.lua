@@ -1,3 +1,2 @@
--- Generated production asset registrations belong here.
--- The existing thirteen skins use their legacy artwork until validated assets
--- are supplied through tools/build_skin_assets.py.
+-- Generated from reviewed PNG sources by build_skin_assets.py.
+assert(GuildRadioFM.RegisterSkinAssets("trogdor", {["surfaces"]={}, ["emblem"]={["path"]="Interface\\AddOns\\GuildRadioFM\\Media\\Skins\\trogdor\\emblem.tga", ["width"]=256, ["height"]=256, ["mode"]="contain", ["bounds"]={0, 0, 256, 256}}}))

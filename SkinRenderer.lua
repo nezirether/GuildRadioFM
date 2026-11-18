@@ -47,11 +47,14 @@ function R.RegisterSkinAssets(key, assets)
     local icons = assets.icons
     local emblem = assets.emblem
     if emblem then
-        if not validDescriptor(emblem) or emblem.width ~= 512 or emblem.height ~= 512 then return false end
+        if not validDescriptor(emblem) or
+            (emblem.width ~= 256 and emblem.width ~= 512) or
+            (emblem.height ~= 256 and emblem.height ~= 512) then return false end
         local bounds = emblem.bounds
         if type(bounds) ~= "table" or #bounds ~= 4 then return false end
         for i=1,4 do
-            if type(bounds[i]) ~= "number" or bounds[i] ~= bounds[i] or bounds[i] < 0 or bounds[i] > 512 then return false end
+            local limit = (i == 1 or i == 3) and emblem.width or emblem.height
+            if type(bounds[i]) ~= "number" or bounds[i] ~= bounds[i] or bounds[i] < 0 or bounds[i] > limit then return false end
         end
         if bounds[1] >= bounds[3] or bounds[2] >= bounds[4] then return false end
     end
@@ -85,7 +88,7 @@ function Renderer:PaintEmblem(binding)
     texture:ClearAllPoints()
     texture:SetPoint(layout.anchor, binding.parent, layout.anchor, layout.x, layout.y)
     texture:SetSize(paintedWidth*scale,paintedHeight*scale)
-    texture:SetTexCoord(box[1]/512,box[3]/512,box[2]/512,box[4]/512)
+    texture:SetTexCoord(box[1]/emblem.width,box[3]/emblem.width,box[2]/emblem.height,box[4]/emblem.height)
     texture:SetVertexColor(1,1,1,1)
     texture:Show()
     binding.available = true

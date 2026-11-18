@@ -101,3 +101,7 @@ These checks require the real client and remain pending until captures and resul
 - [ ] Record the tested source commit, client build and ZIP hash with results.
 
 A completed theme needs its production files integrated and visually reviewed. The current delivery should identify the renderer and test progress separately from the outstanding artwork and client review.
+
+## Supplied original update
+
+The owner supplied the authoritative 256 by 256 transparent Trogdor logo. It is now integrated unchanged through the dedicated emblem renderer. Trogdor emblem artwork is supplied, with actual client verification pending. Other Trogdor decorative surfaces and the twelve other emblem sets remain pending. See GRFM_TROGDOR_ORIGINAL_INTEGRATION.md.

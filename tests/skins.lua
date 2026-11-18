@@ -117,5 +117,12 @@ R.db.skin="trogdor"
 R.RegisterSkinAssets("trogdor",{emblem={path="missing.tga",width=512,height=512,bounds={10,10,500,500}}})
 renderer:Refresh()
 assert(not emblemTexture.visible and not emblemBinding.available)
+-- Load the actual supplied original after synthetic failure scenarios.
+dofile("SkinAssets.lua")
+R.db.skin="trogdor"
+renderer:Refresh()
+assert(emblemBinding.available and emblemTexture.visible)
+assert(emblemTexture.path:match("trogdor.*emblem.tga$"))
+assert(math.abs(emblemTexture.width/emblemTexture.height-1)<0.00001)
 print("PASS: 13 emblem viewports, painted aspect, transparent padding, picker safe zone and rejected legacy fallback")
 print("PASS: 13 skin descriptors, 32 icon regions, states, geometry, resize, missing assets and saved preferences")
