@@ -1,5 +1,15 @@
 GuildRadioFM Changelog
 
+## 2.8.1-rc.2
+
+- Compute room start timestamps on transport attempts and arm playback after successful submission. Superseded announcements expire without starting stale tracks.
+- Retain Request Line entries when a play announcement times out. Keep the room's display name across moderated host transfer without changing the recipient's personal room name.
+- Wait for overlapping loading and cinematic events before recovering local playback. Room listeners wait for the next scheduled boundary after missing a start.
+- Search title, artist, album and pack in the library and playlist picker. Keep locked tracks out of the picker and reject malformed pack headers.
+- Reorder the local queue with /grfm movequeue <from> <to>. Show explicit announcement, countdown and waiting states in the player and room UI.
+- Extend Lua 5.1 simulations for delayed submission, request retention, host transfer, audio recovery and library controls.
+
+
 ## 2.8.1-rc.1
 
 - Stop GuildRadioFM's active sound when leaving the world, opening a loading screen, or tearing down the UI for /reload.

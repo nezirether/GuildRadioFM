@@ -21,3 +21,9 @@ python tests/run_tests.py
 - Repeat as host and listener. Exercise real roster and addon-message behavior, handoff, packet congestion, and network delay beyond the host's scheduling lead. Measure audible synchronization with two Forever clients.
 - Check the actual sound handle and finish event behavior, volume and background audio, theme assets, mini-player dragging and controls, playlist editing, pop-up layout and scaling.
 - Test song-pack installation and real local MP3 files. Interface metadata and the audio mock establish no live-client compatibility result.
+
+## RC2 results
+
+Both Lua 5.1 suites passed again. Added coverage for transport rejection followed by retry after the original scheduling lead, superseding an unsent track, bounded timeout, Request Line retention after timeout, and synchronized mock audio starts after retry. Also checked room-name preservation on host transfer, overlapping loading and cinematic events, malformed pack headers, metadata search through the library, and local queue reordering through the slash command.
+
+Live tests still need to exercise actual C_ChatInfo return values and listener receipt, loading/cinematic event order, audio devices, and UI layout. A successful API submission establishes no per-listener acknowledgment. The fixed scheduling lead remains 1.2 seconds from transmission, so listeners who receive it too late wait for the next start.

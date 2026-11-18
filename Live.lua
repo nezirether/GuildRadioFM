@@ -19,7 +19,8 @@ local EB = { djs = {}, queue = {}, listeners = {}, listenerFull = {}, remoteBy =
 R.Live = EB
 
 local PREFIX = "GRFM_EB"
-local LEAD = 1.2          -- seconds between the DJ pressing play and everyone starting together
+local LEAD = 1.2          -- seconds between announcing the start and starting together
+local ANNOUNCE_TIMEOUT = 8
 local LATE_SLACK = 0.12   -- maximum tolerated delay before waiting for the next song
 local JOIN_PREP = 0.6     -- a join point needs at least this much notice
 local MAX_OPEN = 5
@@ -69,8 +70,8 @@ local function GuildSender(sender)
     return guildNames[sender:lower()]
 end
 
-local function Send(msg, channel, target, onSent, valid)
-    return R.Wire.Send(PREFIX, msg, channel, target, Now(), onSent, valid)
+local function Send(msg, channel, target, onSent, valid, prepare)
+    return R.Wire.Send(PREFIX, msg, channel, target, Now(), onSent, valid, prepare)
 end
 
 -- song <-> wire key: title, lowercased, minus the characters the protocol uses
@@ -97,12 +98,13 @@ local function Fmt(t) return string.format("%.3f", t) end
 -- every live DJ hosts a named room ("Healmode's Room" unless renamed)
 local function Clean(s) return (string.gsub(tostring(s or ""), "[~|,:%c]", "")) end
 function EB:RoomName()
-    local n = R.db.eb.roomName
+    local n = self.inheritedRoomName or R.db.eb.roomName
     if not n or n == "" then n = (UnitName("player") or "My") .. "'s Room" end
     return Clean(n)
 end
 function EB:SetRoomName(name)
     name = Clean(strtrim and strtrim(name or "") or name or "")
+    self.inheritedRoomName = nil
     R.db.eb.roomName = name ~= "" and string.sub(name, 1, 32) or nil
     if self.live then self:Heartbeat() end
 end
@@ -131,13 +133,14 @@ end
 local schedule        -- { at = sharedTime, offset = seconds into the song, file = override }
 local pending         -- the held sound, fired from OnUpdate
 local changingWorld = false
+local audioBlocks = {}
 local audioTransition = 0
 local origPlay, origStop, origAdvance, origLocal = R.Play, R.Stop, R.AdvanceAfterTrackEnd, R.PlayLocalTrack
 
 function R:PlayLocalTrack(song)
     if schedule then
         self:StopLocalTrack()
-        pending = { at = schedule.at + (schedule.offset or 0), song = song, file = schedule.file }
+        pending = { at = schedule.at and (schedule.at + (schedule.offset or 0)), song = song, file = schedule.file }
         return
     end
     if not changingWorld then return origLocal(self, song) end
@@ -182,7 +185,11 @@ local function ScheduledPlay(index, startAt, offset, file)
 end
 
 function EB:JoiningIn()
-    return pending and math.max(0, pending.at - Now()) or nil
+    return pending and pending.at and math.max(0, pending.at - Now()) or nil
+end
+
+function EB:IsAnnouncing()
+    return pending and pending.deadline ~= nil
 end
 
 -- ---------- DJ side ----------
@@ -250,13 +257,15 @@ end
 function EB:PlayTopRequest()
     self:SortQueue()
     while self.queue[1] do
-        local q = table.remove(self.queue, 1)
-        local index = self:IndexOfKey(q.key)
-        if index and not R.db.eb.blocked[q.key] then
+        local q = self.queue[1]
+        local index, song = self:IndexOfKey(q.key)
+        if R:CanPlaySong(song) and not R.db.eb.blocked[q.key] then
+            if not self.live then table.remove(self.queue, 1) end
             R:Print("Request from " .. q.owner .. ": " .. self:TitleOf(q.key))
             R:Play(index)
             return true
         end
+        table.remove(self.queue, 1)
     end
     self:BroadcastQueue()
     return false
@@ -272,7 +281,7 @@ function EB:Decline(key, block)
 end
 
 function EB:Heartbeat()
-    if not self.live then return end
+    if not self.live or self:IsAnnouncing() then return end
     local song = R.db.isPlaying and R:GetCurrentSong() or nil
     local count = 0
     local t = Now()
@@ -287,6 +296,7 @@ function EB:GoLive()
     if not IsInGuild() then return R:Print("Join a guild to go live.") end
     if self.tuned then self:TuneOut(true) end
     self.live = true
+    self.inheritedRoomName = nil
     self.queue = {}
     self.listeners, self.listenerFull = {}, {}
     self.listenerCount = 0
@@ -301,6 +311,10 @@ end
 
 function EB:EndSet()
     if not self.live then return end
+    if self:IsAnnouncing() then
+        pending.at, pending.deadline = Now(), nil
+        R.startedAt = GetTime()
+    end
     self.live = false
     Send("END", "GUILD")
     R:Print("Room closed.")
@@ -483,9 +497,13 @@ end
 
 -- old host: send the queue to the new host, tell the guild, then keep listening to them
 function EB:CompleteHandoff(newFull)
+    if self:IsAnnouncing() then
+        self.offerTo, self.offerFull = nil, nil
+        return R:Print("Wait for the scheduled song before offering to pass the room again.")
+    end
     local offeredAt = self.offerAt
     local function valid()
-        return self.live and self.offerFull == newFull and self.offerAt == offeredAt
+        return self.live and not self:IsAnnouncing() and self.offerFull == newFull and self.offerAt == offeredAt
             and Now() - offeredAt <= 30
     end
     if not Send("HO~" .. newFull .. "~" .. self:QueuePayload(), "GUILD", nil, function()
@@ -493,7 +511,7 @@ function EB:CompleteHandoff(newFull)
         self.live = false
         self.offerTo, self.offerFull = nil, nil
         self.queue = {}
-        local d = { full = newFull, name = name, key = "", start = 0, count = 0, seen = Now() }
+        local d = { full = newFull, name = name, room = self:RoomName(), key = "", start = 0, count = 0, seen = Now() }
         local song = R.db.isPlaying and R:GetCurrentSong()
         if song then d.key, d.start = KeyOf(song), self.songStart or 0 end
         self.djs[newFull] = d
@@ -521,6 +539,7 @@ function EB:OnHandoff(oldFull, newFull, inherit)
         R.db.eb.lastRoomHost = nil
         self.tuned = nil
         self.live = true
+        self.inheritedRoomName = old.room
         self.listeners, self.listenerFull, self.listenerCount = {}, {}, 0
         self.queue = {}
         if inherit then
@@ -537,7 +556,7 @@ function EB:OnHandoff(oldFull, newFull, inherit)
     else
         local d = self.djs[newFull] or { full = newFull, name = Short(newFull) }
         d.seen = Now()
-        if old then d.key, d.start, d.count = old.key, old.start, old.count end
+        d.key, d.start, d.count, d.room = old.key, old.start, old.count, old.room
         self.djs[newFull] = d
         if self.tuned == oldFull then
             self.tuned = newFull
@@ -814,22 +833,35 @@ function R:Play(index)
     if EB.tuned then EB:TuneOut() end
     if EB.live then
         pending = nil
-        local startAt = Now() + LEAD
-        schedule = { at = startAt, offset = 0 }
+        schedule = {}
         origPlay(self, index)
         schedule = nil
-        if self.db.isPlaying then
-            self.startedAt = GetTime() + LEAD
-            self.durationAdvanceStartedAt = nil
-            local song = self:GetCurrentSong()
-            EB.songStart = startAt
-            EB:DropFromQueue(KeyOf(song))
-            Send("NP~" .. KeyOf(song) .. "~" .. Fmt(startAt), "GUILD")
-            EB:BroadcastQueue()
-        else
+        if not pending then
             EB.songStart = 0
             Send("ST", "GUILD")
+            return
         end
+
+        local track = pending
+        track.deadline = Now() + ANNOUNCE_TIMEOUT
+        local key = KeyOf(track.song)
+        local body = "NP~" .. key .. "~"
+        local startAt
+        local queued = Send(body, "GUILD", nil, function()
+            track.at, track.deadline = startAt, nil
+            EB.songStart = startAt
+            self.startedAt = GetTime() + math.max(0, startAt - Now())
+            self.durationAdvanceStartedAt = nil
+            EB:DropFromQueue(key)
+            EB:BroadcastQueue()
+        end, function()
+            return EB.live and pending == track and track.deadline and Now() < track.deadline
+        end, function()
+            startAt = Now() + LEAD
+            return body .. Fmt(startAt)
+        end)
+        if not queued then track.deadline = Now() end
+        Changed()
         return
     end
     pending = nil
@@ -849,6 +881,7 @@ function R:AdvanceAfterTrackEnd()
         self.soundHandle = nil
         self.db.isPlaying = false
         self.startedAt = nil
+        EB.waiting = true
         self:RefreshAll()
         return
     end
@@ -881,7 +914,7 @@ function EB:ResumeAfterLoading()
     local song = R:GetCurrentSong()
     if not song then return end
     if self.live then
-        if pending and pending.at < Now() - LATE_SLACK then pending = nil end
+        if pending and pending.at and pending.at < Now() - LATE_SLACK then pending = nil end
         if not pending then R:Print("The live timeline will continue at the next song.") end
         return
     end
@@ -897,7 +930,7 @@ local function SuspendAudio()
 end
 
 local function RecoverAudio()
-    if not changingWorld then return end
+    if not changingWorld or next(audioBlocks) then return end
     local transition = audioTransition
     R.After(0.5, function()
         if not changingWorld or audioTransition ~= transition then return end
@@ -913,6 +946,9 @@ ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:RegisterEvent("PLAYER_LEAVING_WORLD")
 ev:RegisterEvent("LOADING_SCREEN_ENABLED")
 ev:RegisterEvent("LOADING_SCREEN_DISABLED")
+for _, event in ipairs({"CINEMATIC_START", "CINEMATIC_STOP", "PLAY_MOVIE", "STOP_MOVIE"}) do
+    pcall(ev.RegisterEvent, ev, event)
+end
 ev:RegisterEvent("CHAT_MSG_ADDON")
 ev:RegisterEvent("PLAYER_LOGOUT")
 ev:RegisterEvent("GUILD_ROSTER_UPDATE")
@@ -943,9 +979,22 @@ ev:SetScript("OnEvent", function(_, event, prefix, msg, channel, sender)
         R.db.eb.blocked = R.db.eb.blocked or {}
         if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
         R.After(5, function() Send("HI", "GUILD") end)
-    elseif event == "PLAYER_LEAVING_WORLD" or event == "LOADING_SCREEN_ENABLED" then
+    elseif event == "LOADING_SCREEN_ENABLED" then
+        audioBlocks.loading = true
         SuspendAudio()
-    elseif event == "PLAYER_ENTERING_WORLD" or event == "LOADING_SCREEN_DISABLED" then
+    elseif event == "PLAYER_LEAVING_WORLD" then
+        SuspendAudio()
+    elseif event == "LOADING_SCREEN_DISABLED" then
+        audioBlocks.loading = nil
+        RecoverAudio()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        RecoverAudio()
+    elseif event == "CINEMATIC_START" or event == "PLAY_MOVIE" then
+        audioBlocks[event] = true
+        SuspendAudio()
+    elseif event == "CINEMATIC_STOP" or event == "STOP_MOVIE" then
+        local startEvent = event == "CINEMATIC_STOP" and "CINEMATIC_START" or "PLAY_MOVIE"
+        audioBlocks[startEvent] = nil
         RecoverAudio()
     elseif event == "CHAT_MSG_ADDON" then
         if prefix == PREFIX and msg and sender then EB:OnMessage(msg, channel, sender) end
@@ -962,7 +1011,11 @@ ev:SetScript("OnUpdate", function(_, elapsed)
     if not R.db then return end
     Calibrate()
     R.Wire.Flush()
-    if not changingWorld and pending and Now() >= pending.at then FirePending(); Changed() end
+    if pending and pending.deadline and Now() >= pending.deadline then
+        R:Stop()
+        R:Print("The room could not announce the song. Try playing it again.")
+    end
+    if not changingWorld and pending and pending.at and Now() >= pending.at then FirePending(); Changed() end
     beat = beat + elapsed
     if beat < HEARTBEAT then return end
     beat = 0

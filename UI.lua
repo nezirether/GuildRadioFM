@@ -837,9 +837,10 @@ function R:UpdateNowPage()
     p.title:SetText(song and song.title or "No songs yet")
     local eb = EB()
     local sub
-    if eb and eb.missing then sub = "You don't have this song. Get the latest GuildRadioFM from your DJ."
+    if eb and eb:IsAnnouncing() then sub = "Announcing the next song to the room..."
+    elseif eb and eb.missing then sub = "You don't have this song. Get the latest GuildRadioFM from your DJ."
     elseif eb and eb.waiting then sub = "Tuned in. You'll join at the next song."
-    elseif eb and eb:JoiningIn() then sub = string.format("Joining in %ds, right in time with the room", math.ceil(eb:JoiningIn()))
+    elseif eb and eb:JoiningIn() then sub = string.format("Scheduled start in %ds", math.ceil(eb:JoiningIn()))
     else
         sub = song and (song.artist or (song.id and string.match(song.id, "^noyze") and "Noyze Komplaynt") or "Guild library") or "Add songs in SongList.lua"
         if song then sub = sub .. "  ·  " .. index .. " of " .. self:GetSongCount() end
@@ -873,7 +874,9 @@ end
 
 function R:SongPosition()
     local song = self:GetCurrentSong()
-    if not self.db.isPlaying or not song or not self.startedAt then return 0, tonumber(song and song.duration) or 0 end
+    if not self.db.isPlaying or not song or not self.startedAt or (EB() and EB():IsAnnouncing()) then
+        return 0, tonumber(song and song.duration) or 0
+    end
     local d = tonumber(song.duration) or 0
     local e = GetTime() - self.startedAt
     if d > 0 then e = math.min(e, d) end
@@ -890,7 +893,7 @@ function R:UpdateProgress()
         p.total:SetText(d > 0 and Fmt(d) or "")
         p.lyric:SetText(self:CurrentLyric())
         local eb = EB()
-        if eb and eb:JoiningIn() then p.sub:SetText(string.format("Joining in %ds, right in time with the set", math.ceil(eb:JoiningIn()))) end
+        if eb and eb:JoiningIn() then p.sub:SetText(string.format("Scheduled start in %ds", math.ceil(eb:JoiningIn()))) end
     end
     if self.miniFrame and self.miniFrame:IsShown() then
         local m = self.miniFrame
@@ -900,14 +903,14 @@ end
 
 -- ---------- Library ----------
 function R:GetFilteredSongs()
-    local filter = string.lower(self.db.search or "")
+    local filter = self.db.search
     local view = self.db.libraryView or "all"
     local rows = {}
     for index, song in ipairs(self.songs or {}) do
-        local title = string.lower(song.title or "")
         local matchesView = view ~= "favorites" or self:IsFavorite(index)
-        local matchesFilter = filter == "" or string.find(title, filter, 1, true)
-        if self:CanPlaySong(song) and matchesView and matchesFilter then rows[#rows + 1] = { index = index, song = song } end
+        if self:CanPlaySong(song) and matchesView and self:SongMatchesSearch(song, filter) then
+            rows[#rows + 1] = { index = index, song = song }
+        end
     end
     return rows
 end
@@ -1116,10 +1119,12 @@ function R:BuildPlaylistPage(p)
         row.state:SetText(n > 0 and ("in playlist" .. (n > 1 and (" x" .. n) or "")) or "")
         SetColor(row.title, n > 0 and C.dim or C.text)
     end, function()
-        local needle = string.lower(pick.search:GetText() or "")
+        local needle = pick.search:GetText()
         local out = {}
         for i, song in ipairs(R.songs or {}) do
-            if needle == "" or string.find(string.lower(song.title or ""), needle, 1, true) then out[#out + 1] = { index = i, song = song } end
+            if R:CanPlaySong(song) and R:SongMatchesSearch(song, needle) then
+                out[#out + 1] = { index = i, song = song }
+            end
         end
         return out
     end, "pickScroll")
@@ -1452,15 +1457,16 @@ function R:UpdateLive()
     if eb.live then
         card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])
         card.title:SetText(eb:RoomName())
-        card.sub:SetText("On air" .. (song and ("  ·  " .. song.title) or "") .. "  ·  " .. (eb.listenerCount or 0) .. " tuned in  ·  requests " .. (self.db.eb.open and "open" or "closed") .. (song and "" or "  ·  play a song to start"))
+        local status = eb:IsAnnouncing() and "Announcing track" or "On air"
+        card.sub:SetText(status .. (song and ("  ·  " .. song.title) or "") .. "  ·  " .. (eb.listenerCount or 0) .. " tuned in  ·  requests " .. (self.db.eb.open and "open" or "closed") .. (song and "" or "  ·  play a song to start"))
     elseif eb.tuned then
         local d = eb.djs[eb.tuned]
         card.icon:SetVertexColor(C.acc2[1], C.acc2[2], C.acc2[3])
         card.title:SetText((d and d.room or (eb.Short(eb.tuned) .. "'s Room")) .. (d and d.key ~= "" and ("  ·  " .. eb:TitleOf(d.key)) or ""))
         local j = eb:JoiningIn()
         card.sub:SetText(eb.missing and "|cffffb030You don't have this song. Get the latest GuildRadioFM from the DJ.|r"
-            or (j and string.format("Joining in %ds, in time with everyone", math.ceil(j)))
-            or (eb.waiting and "You'll join at the next song" or ((d and d.count or 0) .. " tuned in  ·  in sync")))
+            or (j and string.format("Scheduled start in %ds", math.ceil(j)))
+            or (eb.waiting and "You'll join at the next song" or ((d and d.count or 0) .. " tuned in")))
     elseif dj then
         dj = eb:FocusDJ() or dj
         card.icon:SetVertexColor(C.live[1], C.live[2], C.live[3])

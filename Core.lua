@@ -1,5 +1,5 @@
 GuildRadioFM = GuildRadioFM or {}
-GuildRadioFM.version = "2.8.1-rc.1"
+GuildRadioFM.version = "2.8.1-rc.2"
 GuildRadioFM.soundChannel = "Dialog"
 
 -- Credit, in plain text (Blizzard's add-on policy: no hidden or obfuscated code).
@@ -109,13 +109,14 @@ function GuildRadioFM:RebuildSongLibrary()
     local seenTitle = {}
     local songIndexById = {}
 
-    local function addSong(song, packId)
+    local function addSong(song, packId, packName)
         if type(song) ~= "table" or type(song.file) ~= "string" or song.file == "" then return nil end
         local copy = {}
         for key, value in pairs(song) do copy[key] = value end
         if packId and (not copy.id or copy.id == "") then
             copy.id = tostring(packId) .. ":" .. tostring(copy.title or copy.file)
         end
+        copy.packName = packName
         if type(copy.id) ~= "string" then copy.id = nil end
         if type(copy.title) ~= "string" then copy.title = copy.file end
         if self.RegisterSongLyrics then self:RegisterSongLyrics(copy) end
@@ -147,7 +148,7 @@ function GuildRadioFM:RebuildSongLibrary()
             packId = pack.packId,
         }
         for _, song in ipairs(pack.songs or {}) do
-            local index = addSong(song, pack.packId)
+            local index = addSong(song, pack.packId, pack.packName)
             if index then
                 local already = false
                 for _, existingIndex in ipairs(playlist.songs) do
@@ -167,15 +168,18 @@ end
 
 function GuildRadioFM.RegisterSongPack(pack)
     local self = GuildRadioFM
-    if type(pack) ~= "table" then return false end
-    local packId = TrimValue(pack.packId or pack.packName or pack.playlistName)
+    if type(pack) ~= "table" or type(pack.songs) ~= "table" then return false end
+    local name = pack.packId or pack.packName or pack.playlistName
+    if type(name) ~= "string" then return false end
+    local packId = TrimValue(name)
     if packId == "" then return false end
+    if (pack.packName and type(pack.packName) ~= "string") or
+        (pack.playlistName and type(pack.playlistName) ~= "string") then return false end
 
     self.songPacks = self.songPacks or {}
     pack.packId = packId
     pack.packName = pack.packName or packId
     pack.playlistName = pack.playlistName or pack.packName
-    if type(pack.songs) ~= "table" then return false end
     self.songPacks[packId] = pack
     if self.RegisterLyricsTable then self:RegisterLyricsTable(pack.lyrics) end
 

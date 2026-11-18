@@ -24,3 +24,11 @@
 Existing playback could orphan a sound handle in two ways. The live loading path discarded it while assuming the client had stopped the sound. Duration-based advancement also cleared the handle before starting the next track, even when the file outlasted its listed duration. UI teardown sent room messages but did not stop the current sound. The candidate stops its owned handle on teardown and world transitions, gates playback while loading, and stops the handle before duration-based advancement.
 
 After a real load, solo playback can restart the same selection once. Room playback retains its timeline and waits for a future scheduled start if the current boundary passed. A previously orphaned handle from an older running build is outside the candidate's handle ownership. Live hosts still reopen their room manually after a disconnect or reload.
+
+## RC2 findings and fixes
+
+- RC1 assigned the Now Playing timestamp before transport submission. A blocked send could consume the entire lead. RC2 assigns the start on submission attempt, arms it on success, and honors the existing queue, limits, and retries. The announcement expires after eight seconds.
+- A Request Line item used to be removed at selection time. RC2 consumes it when the announcement is submitted, so a send failure leaves it available.
+- Host handoff now retains the advertised room name in memory. The new host's saved personal room name is used again for independently opened rooms.
+- Metadata searches now work in the library and playlist picker. Locked Secret Frequency tracks stay out of the picker until they are available.
+- A world-entry event could precede completion of the loading screen. RC2 waits for known loading and cinematic blocks to clear.

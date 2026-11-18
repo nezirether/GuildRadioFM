@@ -1,4 +1,4 @@
-GuildRadioFM 2.8.1 RC1 for WoW Forever (Interface 16001)
+GuildRadioFM 2.8.1 RC2 for WoW Forever (Interface 16001)
 
 1. Back up existing GuildRadioFM and its SavedVariables.
 2. Install the GuildRadioFM folder into the Forever Interface/AddOns directory.

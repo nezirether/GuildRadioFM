@@ -17,7 +17,7 @@ function GuildRadioFM:ShowHelp()
     self:Print("/grfm shuffle, /grfm repeat, /grfm autonext, /grfm mute, /grfm favorite, /grfm unlike")
     self:Print("/grfm favorites, /grfm playliked")
     self:Print("/grfm volume 50, /grfm v 50, /grfm song 1, /grfm reset")
-    self:Print("Local queue: /grfm queue [song number], /grfm unqueue <entry>, /grfm playqueue. Frequencies: /grfm tune <number>.")
+    self:Print("Local queue: /grfm queue [song number], /grfm unqueue <entry>, /grfm movequeue <from> <to>, /grfm playqueue. Frequencies: /grfm tune <number>.")
     self:Print("Rooms: /grfm live (window), /grfm dj (open a room), /grfm room <name>, /grfm invite (whole guild), /grfm invite <name>, /grfm pass <name>, /grfm endset, /grfm tune, /grfm tuneout, /grfm say <message> (room chat), /grfm unblock")
 end
 
@@ -58,6 +58,11 @@ SlashCmdList["GUILDRADIOFM"] = function(message)
     if queued then GuildRadioFM:AddToQueue(tonumber(queued)) return end
     local remove = lower:match("^unqueue%s+(%d+)$")
     if remove then GuildRadioFM:RemoveFromQueue(remove) return end
+    local from, to = lower:match("^movequeue%s+(%d+)%s+(%d+)$")
+    if from then
+        if not GuildRadioFM:MoveQueueEntry(from, to) then GuildRadioFM:Print("Choose two different queue positions.") end
+        return
+    end
     if lower == "playqueue" then GuildRadioFM:PlayNextInQueue() return end
     if lower == "queue" then
         local queue = GuildRadioFM:GetQueue()

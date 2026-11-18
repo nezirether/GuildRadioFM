@@ -57,7 +57,7 @@ end
 
 function R:CurrentLyric()
     if not self.db or not self.db.isPlaying or not self.startedAt then return "" end
-    if self.Live and self.Live:JoiningIn() then return "" end
+    if self.Live and (self.Live:IsAnnouncing() or self.Live:JoiningIn()) then return "" end
     local elapsed = GetTime() - self.startedAt
     local lines = self:GetLyricsForSong(self:GetCurrentSong())
     if not lines or elapsed < 0 then return "" end
@@ -71,6 +71,22 @@ end
 
 function R:CanPlaySong(song)
     return type(song) == "table" and (not song.hidden or self.db.secretFrequencyUnlocked == true)
+end
+
+function R:SongMatchesSearch(song, query)
+    local terms = type(query) == "string" and query:lower() or ""
+    local fields = {song.title or "", song.artist or "", song.album or "", song.packName or ""}
+    for term in terms:gmatch("%S+") do
+        local found
+        for _, value in ipairs(fields) do
+            if type(value) == "string" and value:lower():find(term, 1, true) then
+                found = true
+                break
+            end
+        end
+        if not found then return false end
+    end
+    return true
 end
 
 function R:TuneFrequency(frequency)
@@ -125,6 +141,16 @@ function R:PlayNextInQueue()
     end
     if #queue > 0 then self:Print("Queued songs are unavailable. Their entries were kept.") end
     return false
+end
+
+function R:MoveQueueEntry(from, to)
+    local queue = self:GetQueue()
+    from, to = tonumber(from), tonumber(to)
+    if not from or not to or from % 1 ~= 0 or to % 1 ~= 0 or
+        from < 1 or to < 1 or from > #queue or to > #queue or from == to then return false end
+    table.insert(queue, to, table.remove(queue, from))
+    self:RefreshAll()
+    return true
 end
 
 function R:RemoveFromQueue(index)

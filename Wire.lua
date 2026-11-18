@@ -17,7 +17,10 @@ end
 local function transmit(packet)
     local send = C_ChatInfo and C_ChatInfo.SendAddonMessage or SendAddonMessage
     if not send then return false end
-    local ok, result = pcall(send, packet.prefix, packet.body, packet.channel, packet.target)
+    local body = packet.prepare and packet.prepare() or packet.body
+    local payload = packet.header .. body
+    if #body > MAX_BODY or #payload > MAX_PACKET then return false end
+    local ok, result = pcall(send, packet.prefix, payload, packet.channel, packet.target)
     if not ok or result == false then return false end
     if type(result) == "number" then
         local values = Enum and Enum.SendAddonMessageResult
@@ -51,7 +54,7 @@ function Wire.Flush()
     end
 end
 
-function Wire.Send(prefix, body, channel, target, serverTime, onSent, valid)
+function Wire.Send(prefix, body, channel, target, serverTime, onSent, valid, prepare)
     local guild = IsInGuild() and GetGuildInfo and GetGuildInfo("player")
     if not guild or #body > MAX_BODY then return false end
     if channel ~= "GUILD" and (channel ~= "WHISPER" or type(target) ~= "string" or target == "") then return false end
@@ -60,8 +63,8 @@ function Wire.Send(prefix, body, channel, target, serverTime, onSent, valid)
         R.db.eb.wireEpoch = epoch
     end
     sequence = sequence + 1
-    local payload = VERSION .. "~" .. epoch .. "~" .. sequence .. "~" .. body
-    if #payload > MAX_PACKET then return false end
+    local header = VERSION .. "~" .. epoch .. "~" .. sequence .. "~"
+    if #header + #body > MAX_PACKET then return false end
     local kind = body:match("^[^~]+")
     local coalesce = kind == "LV" or kind == "QS" or kind == "TU"
     if coalesce then
@@ -72,9 +75,9 @@ function Wire.Send(prefix, body, channel, target, serverTime, onSent, valid)
     end
     if #packets >= MAX_PENDING then return false end
     local transient = kind == "CH" or kind == "CR" or kind == "RR"
-    packets[#packets + 1] = {prefix=prefix, body=payload, kind=kind, channel=channel, target=target,
+    packets[#packets + 1] = {prefix=prefix, body=body, header=header, kind=kind, channel=channel, target=target,
         guild=guild, created=GetTime(), ttl=(transient or kind == "HO") and 8 or 30,
-        onSent=onSent, valid=valid}
+        onSent=onSent, valid=valid, prepare=prepare}
     Wire.Flush()
     return true
 end
