@@ -14,6 +14,21 @@ spec.loader.exec_module(builder)
 
 
 class SkinPipelineTests(unittest.TestCase):
+    def test_signature_texture_paths_and_dimensions(self):
+        lua = LuaRuntime()
+        lua.execute('GuildRadioFM = {}')
+        for name in ('Skins.lua', 'SkinRenderer.lua', 'SkinAssets.lua', 'SignatureArt.lua'):
+            lua.execute((ROOT / name).read_text(encoding='utf-8'))
+        assets = lua.globals().GuildRadioFM.SkinRenderer.assets
+        prefix = 'Interface\\AddOns\\GuildRadioFM\\'
+        self.assertEqual(len(list(assets.keys())), 13)
+        for _, skin in assets.items():
+            for _, surface in skin.surfaces.items():
+                local = ROOT / surface.path.removeprefix(prefix).replace('\\', '/')
+                with Image.open(local) as image:
+                    image.load()
+                    self.assertEqual(image.size, (surface.width, surface.height))
+
     def test_supplied_native_logo(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / 'output'
